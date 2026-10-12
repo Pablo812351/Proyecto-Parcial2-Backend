@@ -1,7 +1,7 @@
-# 🎮 Gaming Search - Propuesta de Proyecto SPA & REST API
+# 🎮 Gaming Hub - Propuesta de Proyecto SPA & REST API
 
 ## 📝 Descripción General
-**Gaming Search** es una plataforma web orientada al catálogo y exploración de videojuegos. La propuesta consiste en una Single Page Application (SPA) interactiva que permite a los usuarios buscar, filtrar y explorar información de videojuegos por título, género o empresa desarrolladora. Cada juego contará con una ficha explicativa (fecha de lanzamiento, desarrolladora, género).
+**Gaming Hub** es una plataforma web orientada al catálogo y exploración de videojuegos. La propuesta consiste en una Single Page Application (SPA) interactiva que permite a los usuarios buscar, filtrar y explorar información de videojuegos por título, género o empresa desarrolladora. Cada juego contará con una ficha explicativa (fecha de lanzamiento, desarrolladora, género).
 
 Este proyecto se concibe como una solución Full-Stack donde el backend expone una API REST para el modelado, autenticación y persistencia de datos, consumida por el frontend de la aplicación.
 

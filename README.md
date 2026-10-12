@@ -1,24 +1,20 @@
 # 🎮 Gaming Hub - Propuesta de Proyecto SPA & REST API
 
 ## 📝 Descripción General
-**Gaming Hub** es una plataforma web orientada al catálogo y exploración de videojuegos. La propuesta consiste en una Single Page Application (SPA) interactiva que permite a los usuarios buscar, filtrar y explorar información de videojuegos por título, género o empresa desarrolladora. Cada juego contará con una ficha explicativa (fecha de lanzamiento, desarrolladora, género).
-
-Este proyecto se concibe como una solución Full-Stack donde el backend expone una API REST para el modelado, autenticación y persistencia de datos, consumida por el frontend de la aplicación.
+**Gaming Hub** es una plataforma web orientada al catálogo y exploración de videojuegos. La propuesta consiste en una Single Page Application (SPA) interactiva que permite a los usuarios buscar, filtrar y explorar información de videojuegos por título, género o empresa desarrolladora. Cada juego contará con una ficha explicativa (fecha de lanzamiento, descripción, desarrolladora, etc).
 
 ---
 
 ## 🎯 Alcance del Proyecto
 
 ### 🏢 Usuarios y Permisos
-El sistema gestionará dos tipos de usuarios autenticados mediante tokens JWT:
+El sistema gestionará dos tipos de usuarios autenticados:
 * **Usuario Final (Cliente/Visitante):**
   * Explorar el catálogo de videojuegos con filtros dinámicos (género, desarrollador, nombre).
-  * Ver el detalle individual de cada videojuego (reseñas, descripción, desarrolladora y género).
+  * Ver el detalle individual de cada videojuego.
 * **Usuario Administrador:**
   * Acceso completo al módulo CRUD de videojuegos (Crear, Editar, Eliminar y Leer).
   * Administración de categorías / géneros.
-  * Gestión de plataformas o empresas vinculadas.
-
 ---
 
 ## 🛠️ Tecnologías Propuestas

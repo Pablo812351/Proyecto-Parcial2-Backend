@@ -12,15 +12,23 @@ export const register = async (req, res) => {
   const { username, email, password } = req.body;
   
   try {
+    if (!username || !username.trim() || !email || !email.trim() || !password) {
+      return res.status(400).json({ message: 'Todos los campos (usuario, email y contraseña) son obligatorios' });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ message: 'La contraseña debe tener al menos 6 caracteres' });
+    }
+
     const userExists = await User.findOne({ email });
 
     if (userExists) {
-      return res.status(400).json({ message: 'User already exists' });
+      return res.status(400).json({ message: 'El correo electrónico ya está registrado' });
     }
 
     const user = await User.create({
-      username,
-      email,
+      username: username.trim(),
+      email: email.trim().toLowerCase(),
       password
     });
 
@@ -33,7 +41,7 @@ export const register = async (req, res) => {
         token: generateToken(user._id)
       });
     } else {
-      res.status(400).json({ message: 'Invalid user data' });
+      res.status(400).json({ message: 'Datos de usuario inválidos' });
     }
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -44,6 +52,10 @@ export const login = async (req, res) => {
   const { email, password } = req.body;
   
   try {
+    if (!email || !password) {
+      return res.status(400).json({ message: 'Email y contraseña son requeridos' });
+    }
+
     const user = await User.findOne({ email });
 
     if (user && (await user.matchPassword(password))) {
@@ -55,7 +67,7 @@ export const login = async (req, res) => {
         token: generateToken(user._id)
       });
     } else {
-      res.status(401).json({ message: 'Invalid email or password' });
+      res.status(401).json({ message: 'Correo electrónico o contraseña inválidos' });
     }
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -68,7 +80,7 @@ export const getFavorites = async (req, res) => {
     if (user) {
       res.json(user.favorites);
     } else {
-      res.status(404).json({ message: 'User not found' });
+      res.status(404).json({ message: 'Usuario no encontrado' });
     }
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -106,7 +118,7 @@ export const toggleFavorite = async (req, res) => {
       await user.save();
       res.json({ favorites: user.favorites });
     } else {
-      res.status(404).json({ message: 'User not found' });
+      res.status(404).json({ message: 'Usuario no encontrado' });
     }
   } catch (error) {
     res.status(500).json({ message: error.message });

@@ -12,10 +12,15 @@ export const getGenres = async (req, res) => {
 export const createGenre = async (req, res) => {
   try {
     const { name, description } = req.body;
-    const genreExists = await Genre.findOne({ name });
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({ message: 'El nombre del género es obligatorio' });
+    }
+
+    const genreExists = await Genre.findOne({ name: { $regex: new RegExp(`^${name.trim()}$`, 'i') } });
     
     if (genreExists) {
-      return res.status(400).json({ message: 'Genre already exists' });
+      return res.status(400).json({ message: 'El género ya existe' });
     }
 
     const genre = new Genre({

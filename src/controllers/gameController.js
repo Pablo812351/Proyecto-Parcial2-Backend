@@ -50,7 +50,7 @@ export const getGameById = async (req, res) => {
     if (game) {
       res.json(game);
     } else {
-      res.status(404).json({ message: 'Game not found' });
+      res.status(404).json({ message: 'Videojuego no encontrado' });
     }
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -72,17 +72,34 @@ export const createGame = async (req, res) => {
   try {
     const { title, description, releaseDate, developerName, genreName, steamUrl, imageUrl } = req.body;
 
-    const genreId = await findOrCreate(Genre, genreName);
-    const developerId = await findOrCreate(Company, developerName);
+    // Validaciones de campos obligatorios
+    if (!title || !title.trim()) {
+      return res.status(400).json({ message: 'El título del videojuego es obligatorio' });
+    }
+    if (!description || !description.trim()) {
+      return res.status(400).json({ message: 'La descripción del videojuego es obligatoria' });
+    }
+    if (!developerName || !developerName.trim()) {
+      return res.status(400).json({ message: 'El nombre de la empresa/desarrolladora es obligatorio' });
+    }
+    if (!genreName || !genreName.trim()) {
+      return res.status(400).json({ message: 'El género del videojuego es obligatorio' });
+    }
+    if (!imageUrl || !imageUrl.trim()) {
+      return res.status(400).json({ message: 'La URL de la imagen de portada es obligatoria' });
+    }
+
+    const genreId = await findOrCreate(Genre, genreName.trim());
+    const developerId = await findOrCreate(Company, developerName.trim());
 
     const game = new Game({
-      title,
-      description,
-      releaseDate,
+      title: title.trim(),
+      description: description.trim(),
+      releaseDate: releaseDate ? new Date(releaseDate) : undefined,
       developer: developerId,
       genre: genreId,
-      steamUrl,
-      imageUrl
+      steamUrl: steamUrl ? steamUrl.trim() : '',
+      imageUrl: imageUrl.trim()
     });
 
     const createdGame = await game.save();
@@ -99,22 +116,31 @@ export const updateGame = async (req, res) => {
     }
 
     const { title, description, releaseDate, developerName, genreName, steamUrl, imageUrl } = req.body;
+
+    // Validar que si se envían valores no sean solo espacios en blanco
+    if (title !== undefined && !title.trim()) {
+      return res.status(400).json({ message: 'El título no puede estar vacío' });
+    }
+    if (description !== undefined && !description.trim()) {
+      return res.status(400).json({ message: 'La descripción no puede estar vacía' });
+    }
+
     const game = await Game.findById(req.params.id);
 
     if (game) {
-      if (title !== undefined) game.title = title;
-      if (description !== undefined) game.description = description;
-      if (releaseDate !== undefined) game.releaseDate = releaseDate;
-      if (steamUrl !== undefined) game.steamUrl = steamUrl;
-      if (imageUrl !== undefined) game.imageUrl = imageUrl;
+      if (title !== undefined) game.title = title.trim();
+      if (description !== undefined) game.description = description.trim();
+      if (releaseDate !== undefined) game.releaseDate = releaseDate ? new Date(releaseDate) : null;
+      if (steamUrl !== undefined) game.steamUrl = steamUrl.trim();
+      if (imageUrl !== undefined) game.imageUrl = imageUrl.trim();
 
-      if (genreName) game.genre = await findOrCreate(Genre, genreName);
-      if (developerName) game.developer = await findOrCreate(Company, developerName);
+      if (genreName) game.genre = await findOrCreate(Genre, genreName.trim());
+      if (developerName) game.developer = await findOrCreate(Company, developerName.trim());
 
       const updatedGame = await game.save();
       res.json(updatedGame);
     } else {
-      res.status(404).json({ message: 'Game not found' });
+      res.status(404).json({ message: 'Videojuego no encontrado' });
     }
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -134,9 +160,9 @@ export const deleteGame = async (req, res) => {
       // Limpiar en cascada relaciones de biblioteca y favoritos
       await UserGame.deleteMany({ game: game._id });
       await User.updateMany({ favorites: game._id }, { $pull: { favorites: game._id } });
-      res.json({ message: 'Game removed' });
+      res.json({ message: 'Videojuego eliminado correctamente' });
     } else {
-      res.status(404).json({ message: 'Game not found' });
+      res.status(404).json({ message: 'Videojuego no encontrado' });
     }
   } catch (error) {
     res.status(500).json({ message: error.message });

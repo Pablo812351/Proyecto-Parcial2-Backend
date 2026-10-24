@@ -12,10 +12,15 @@ export const getCompanies = async (req, res) => {
 export const createCompany = async (req, res) => {
   try {
     const { name } = req.body;
-    const companyExists = await Company.findOne({ name });
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({ message: 'El nombre de la empresa es obligatorio' });
+    }
+
+    const companyExists = await Company.findOne({ name: { $regex: new RegExp(`^${name.trim()}$`, 'i') } });
     
     if (companyExists) {
-      return res.status(400).json({ message: 'Company already exists' });
+      return res.status(400).json({ message: 'La empresa ya existe' });
     }
 
     const company = new Company({ name });

@@ -32,6 +32,11 @@ app.get('/', (req, res) => {
   res.send('Gaming Hub API is running...');
 });
 
+// Error handling middlewares
+import { notFound, errorHandler } from './middlewares/errorMiddleware.js';
+app.use(notFound);
+app.use(errorHandler);
+
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {

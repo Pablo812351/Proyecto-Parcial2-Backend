@@ -1,11 +1,12 @@
 import Genre from '../models/Genre.js';
+import { handleControllerError, escapeRegex } from '../utils/errorHandler.js';
 
 export const getGenres = async (req, res) => {
   try {
-    const genres = await Genre.find({});
+    const genres = await Genre.find({}).sort({ name: 1 });
     res.json(genres);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    handleControllerError(res, error, 'Error al obtener la lista de géneros');
   }
 };
 
@@ -17,20 +18,22 @@ export const createGenre = async (req, res) => {
       return res.status(400).json({ message: 'El nombre del género es obligatorio' });
     }
 
-    const genreExists = await Genre.findOne({ name: { $regex: new RegExp(`^${name.trim()}$`, 'i') } });
+    const cleanName = name.trim();
+    const safeName = escapeRegex(cleanName);
+    const genreExists = await Genre.findOne({ name: { $regex: new RegExp(`^${safeName}$`, 'i') } });
     
     if (genreExists) {
-      return res.status(400).json({ message: 'El género ya existe' });
+      return res.status(400).json({ message: 'El género ya se encuentra registrado' });
     }
 
     const genre = new Genre({
-      name,
-      description
+      name: cleanName,
+      description: description ? description.trim() : ''
     });
 
     const createdGenre = await genre.save();
     res.status(201).json(createdGenre);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    handleControllerError(res, error, 'Error al crear el género');
   }
 };

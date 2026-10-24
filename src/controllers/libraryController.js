@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import UserGame from '../models/UserGame.js';
 import Game from '../models/Game.js';
 import User from '../models/User.js';
+import { handleControllerError } from '../utils/errorHandler.js';
 
 // Estados válidos
 const VALID_STATUSES = ['Pendiente', 'Jugando', 'Completado', 'Abandonado'];
@@ -37,7 +38,7 @@ export const getUserLibrary = async (req, res) => {
 
     res.json(validItems);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    handleControllerError(res, error, 'Error al obtener la biblioteca del usuario');
   }
 };
 
@@ -49,7 +50,7 @@ export const getGameLibraryStatus = async (req, res) => {
     const { gameId } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(gameId)) {
-      return res.status(400).json({ message: 'ID de juego inválido' });
+      return res.status(400).json({ message: 'El identificador del videojuego no es válido' });
     }
 
     const item = await UserGame.findOne({ user: req.user._id, game: gameId })
@@ -67,7 +68,7 @@ export const getGameLibraryStatus = async (req, res) => {
 
     res.json({ inLibrary: true, item });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    handleControllerError(res, error, 'Error al consultar el estado del juego en la biblioteca');
   }
 };
 
@@ -79,7 +80,7 @@ export const addOrUpdateLibraryItem = async (req, res) => {
     const { gameId, status, isFavorite } = req.body;
 
     if (!gameId || !mongoose.Types.ObjectId.isValid(gameId)) {
-      return res.status(400).json({ message: 'El ID del juego es inválido o no fue provisto' });
+      return res.status(400).json({ message: 'El identificador del videojuego es inválido o no fue provisto' });
     }
 
     const game = await Game.findById(gameId);
@@ -89,7 +90,7 @@ export const addOrUpdateLibraryItem = async (req, res) => {
 
     if (status && !VALID_STATUSES.includes(status)) {
       return res.status(400).json({ 
-        message: `Estado inválido. Debe ser uno de: ${VALID_STATUSES.join(', ')}` 
+        message: `Estado de juego inválido. Debe ser uno de: ${VALID_STATUSES.join(', ')}` 
       });
     }
 
@@ -135,7 +136,7 @@ export const addOrUpdateLibraryItem = async (req, res) => {
 
     res.status(200).json(item);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    handleControllerError(res, error, 'Error al agregar el videojuego a la biblioteca');
   }
 };
 
@@ -148,13 +149,18 @@ export const updateLibraryItem = async (req, res) => {
     const { status, isFavorite } = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(gameId)) {
-      return res.status(400).json({ message: 'ID de juego inválido' });
+      return res.status(400).json({ message: 'El identificador del videojuego no es válido' });
+    }
+
+    const game = await Game.findById(gameId);
+    if (!game) {
+      return res.status(404).json({ message: 'Videojuego no encontrado' });
     }
 
     if (status !== undefined && status) {
       if (!VALID_STATUSES.includes(status)) {
         return res.status(400).json({ 
-          message: `Estado inválido. Debe ser uno de: ${VALID_STATUSES.join(', ')}` 
+          message: `Estado de juego inválido. Debe ser uno de: ${VALID_STATUSES.join(', ')}` 
         });
       }
     }
@@ -202,7 +208,7 @@ export const updateLibraryItem = async (req, res) => {
 
     res.json(item);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    handleControllerError(res, error, 'Error al actualizar el videojuego en la biblioteca');
   }
 };
 
@@ -214,18 +220,18 @@ export const removeFromLibrary = async (req, res) => {
     const { gameId } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(gameId)) {
-      return res.status(400).json({ message: 'ID de juego inválido' });
+      return res.status(400).json({ message: 'El identificador del videojuego no es válido' });
     }
 
     const deleted = await UserGame.findOneAndDelete({ user: req.user._id, game: gameId });
 
     if (!deleted) {
-      return res.status(404).json({ message: 'El juego no está en tu biblioteca' });
+      return res.status(404).json({ message: 'El videojuego no se encuentra en tu biblioteca' });
     }
 
-    res.json({ message: 'Juego eliminado de tu biblioteca', gameId });
+    res.json({ message: 'Videojuego eliminado de tu biblioteca', gameId });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    handleControllerError(res, error, 'Error al eliminar el videojuego de la biblioteca');
   }
 };
 
@@ -237,7 +243,12 @@ export const toggleLibraryFavorite = async (req, res) => {
     const { gameId } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(gameId)) {
-      return res.status(400).json({ message: 'ID de juego inválido' });
+      return res.status(400).json({ message: 'El identificador del videojuego no es válido' });
+    }
+
+    const game = await Game.findById(gameId);
+    if (!game) {
+      return res.status(404).json({ message: 'Videojuego no encontrado' });
     }
 
     let item = await UserGame.findOne({ user: req.user._id, game: gameId });
@@ -290,6 +301,6 @@ export const toggleLibraryFavorite = async (req, res) => {
 
     res.json({ isFavorite: item.isFavorite, item });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    handleControllerError(res, error, 'Error al alternar favorito en la biblioteca');
   }
 };

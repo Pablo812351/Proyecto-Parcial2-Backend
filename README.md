@@ -111,13 +111,16 @@ Proyecto-Parcial2-Backend/
 │   │   ├── companyController.js  # Listado y creación de empresas/desarrolladoras con validación
 │   │   └── libraryController.js  # Gestión de estados de biblioteca personal (Pendiente, Jugando, etc.)
 │   ├── middlewares/
-│   │   └── authMiddleware.js     # Verificación de token JWT (protect) y validación de rol de administrador (admin)
+│   │   ├── authMiddleware.js     # Verificación de token JWT (protect) y validación de rol de administrador (admin)
+│   │   └── errorMiddleware.js    # Manejo global de rutas 404 y captura centralizada de excepciones
 │   ├── models/
 │   │   ├── User.js          # Esquema y modelo de Usuarios (pre-save hook con bcrypt y método matchPassword)
 │   │   ├── Game.js          # Esquema y modelo de Videojuegos (entidad CRUD principal)
 │   │   ├── Genre.js         # Esquema y modelo de Géneros
 │   │   ├── Company.js       # Esquema y modelo de Empresas Desarrolladoras
 │   │   └── UserGame.js      # Esquema y modelo de la relación Usuario-Videojuego (Biblioteca personal)
+│   ├── utils/
+│   │   └── errorHandler.js  # Formateo y captura amigable de errores de MongoDB (E11000, validaciones, CastError)
 │   └── app.js               # Archivo principal: configuración de Express, CORS, parseo JSON y montaje de rutas
 ├── .env.example             # Plantilla de variables de entorno requeridas
 ├── .gitignore               # Archivos y directorios excluidos de Git (node_modules, .env, etc.)

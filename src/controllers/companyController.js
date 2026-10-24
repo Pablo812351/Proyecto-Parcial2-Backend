@@ -1,11 +1,12 @@
 import Company from '../models/Company.js';
+import { handleControllerError, escapeRegex } from '../utils/errorHandler.js';
 
 export const getCompanies = async (req, res) => {
   try {
-    const companies = await Company.find({});
+    const companies = await Company.find({}).sort({ name: 1 });
     res.json(companies);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    handleControllerError(res, error, 'Error al obtener la lista de empresas');
   }
 };
 
@@ -17,17 +18,19 @@ export const createCompany = async (req, res) => {
       return res.status(400).json({ message: 'El nombre de la empresa es obligatorio' });
     }
 
-    const companyExists = await Company.findOne({ name: { $regex: new RegExp(`^${name.trim()}$`, 'i') } });
+    const cleanName = name.trim();
+    const safeName = escapeRegex(cleanName);
+    const companyExists = await Company.findOne({ name: { $regex: new RegExp(`^${safeName}$`, 'i') } });
     
     if (companyExists) {
-      return res.status(400).json({ message: 'La empresa ya existe' });
+      return res.status(400).json({ message: 'La empresa ya se encuentra registrada' });
     }
 
-    const company = new Company({ name });
+    const company = new Company({ name: cleanName });
 
     const createdCompany = await company.save();
     res.status(201).json(createdCompany);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    handleControllerError(res, error, 'Error al registrar la empresa');
   }
 };

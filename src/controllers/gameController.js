@@ -4,24 +4,26 @@ import Genre from '../models/Genre.js';
 import Company from '../models/Company.js';
 import UserGame from '../models/UserGame.js';
 import User from '../models/User.js';
+import { handleControllerError, escapeRegex } from '../utils/errorHandler.js';
 
 export const getGames = async (req, res) => {
   try {
     const { search } = req.query;
     let query = {};
 
-    if (search) {
-      // Find matching genres and companies by text
-      const matchingGenres = await Genre.find({ name: { $regex: search, $options: 'i' } });
-      const matchingCompanies = await Company.find({ name: { $regex: search, $options: 'i' } });
+    if (search && search.trim()) {
+      const safeSearch = escapeRegex(search.trim());
+
+      // Búsqueda insensible a mayúsculas y protegida contra caracteres de regex
+      const matchingGenres = await Genre.find({ name: { $regex: safeSearch, $options: 'i' } });
+      const matchingCompanies = await Company.find({ name: { $regex: safeSearch, $options: 'i' } });
 
       const genreIds = matchingGenres.map(g => g._id);
       const companyIds = matchingCompanies.map(c => c._id);
 
-      // Game matches if title matches OR its genre is in matchingGenres OR its developer is in matchingCompanies
       query = {
         $or: [
-          { title: { $regex: search, $options: 'i' } },
+          { title: { $regex: safeSearch, $options: 'i' } },
           { genre: { $in: genreIds } },
           { developer: { $in: companyIds } }
         ]
@@ -33,14 +35,14 @@ export const getGames = async (req, res) => {
       .populate('genre', 'name');
     res.json(games);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    handleControllerError(res, error, 'Error al obtener el catálogo de videojuegos');
   }
 };
 
 export const getGameById = async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-      return res.status(400).json({ message: 'ID de juego inválido' });
+      return res.status(400).json({ message: 'El identificador del videojuego no es válido' });
     }
 
     const game = await Game.findById(req.params.id)
@@ -53,17 +55,18 @@ export const getGameById = async (req, res) => {
       res.status(404).json({ message: 'Videojuego no encontrado' });
     }
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    handleControllerError(res, error, 'Error al obtener el detalle del videojuego');
   }
 };
 
-// Helper function to find or create a related document
+// Función auxiliar para buscar o crear documentos relacionados con escape de regex
 const findOrCreate = async (Model, name) => {
   if (!name) return null;
-  // Búsqueda case-insensitive exacta
-  let doc = await Model.findOne({ name: { $regex: new RegExp(`^${name}$`, 'i') } });
+  const cleanName = name.trim();
+  const safeName = escapeRegex(cleanName);
+  let doc = await Model.findOne({ name: { $regex: new RegExp(`^${safeName}$`, 'i') } });
   if (!doc) {
-    doc = await Model.create({ name });
+    doc = await Model.create({ name: cleanName });
   }
   return doc._id;
 };
@@ -72,7 +75,7 @@ export const createGame = async (req, res) => {
   try {
     const { title, description, releaseDate, developerName, genreName, steamUrl, imageUrl } = req.body;
 
-    // Validaciones de campos obligatorios
+    // Validaciones estrictas de campos obligatorios
     if (!title || !title.trim()) {
       return res.status(400).json({ message: 'El título del videojuego es obligatorio' });
     }
@@ -89,8 +92,12 @@ export const createGame = async (req, res) => {
       return res.status(400).json({ message: 'La URL de la imagen de portada es obligatoria' });
     }
 
-    const genreId = await findOrCreate(Genre, genreName.trim());
-    const developerId = await findOrCreate(Company, developerName.trim());
+    if (releaseDate && isNaN(Date.parse(releaseDate))) {
+      return res.status(400).json({ message: 'La fecha de lanzamiento no tiene un formato de fecha válido' });
+    }
+
+    const genreId = await findOrCreate(Genre, genreName);
+    const developerId = await findOrCreate(Company, developerName);
 
     const game = new Game({
       title: title.trim(),
@@ -105,24 +112,26 @@ export const createGame = async (req, res) => {
     const createdGame = await game.save();
     res.status(201).json(createdGame);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    handleControllerError(res, error, 'Error al crear el nuevo videojuego');
   }
 };
 
 export const updateGame = async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-      return res.status(400).json({ message: 'ID de juego inválido' });
+      return res.status(400).json({ message: 'El identificador del videojuego no es válido' });
     }
 
     const { title, description, releaseDate, developerName, genreName, steamUrl, imageUrl } = req.body;
 
-    // Validar que si se envían valores no sean solo espacios en blanco
     if (title !== undefined && !title.trim()) {
       return res.status(400).json({ message: 'El título no puede estar vacío' });
     }
     if (description !== undefined && !description.trim()) {
       return res.status(400).json({ message: 'La descripción no puede estar vacía' });
+    }
+    if (releaseDate !== undefined && releaseDate && isNaN(Date.parse(releaseDate))) {
+      return res.status(400).json({ message: 'La fecha de lanzamiento no tiene un formato válido' });
     }
 
     const game = await Game.findById(req.params.id);
@@ -131,11 +140,15 @@ export const updateGame = async (req, res) => {
       if (title !== undefined) game.title = title.trim();
       if (description !== undefined) game.description = description.trim();
       if (releaseDate !== undefined) game.releaseDate = releaseDate ? new Date(releaseDate) : null;
-      if (steamUrl !== undefined) game.steamUrl = steamUrl.trim();
-      if (imageUrl !== undefined) game.imageUrl = imageUrl.trim();
+      if (steamUrl !== undefined) game.steamUrl = steamUrl ? steamUrl.trim() : '';
+      if (imageUrl !== undefined) game.imageUrl = imageUrl ? imageUrl.trim() : '';
 
-      if (genreName) game.genre = await findOrCreate(Genre, genreName.trim());
-      if (developerName) game.developer = await findOrCreate(Company, developerName.trim());
+      if (genreName && genreName.trim()) {
+        game.genre = await findOrCreate(Genre, genreName);
+      }
+      if (developerName && developerName.trim()) {
+        game.developer = await findOrCreate(Company, developerName);
+      }
 
       const updatedGame = await game.save();
       res.json(updatedGame);
@@ -143,14 +156,14 @@ export const updateGame = async (req, res) => {
       res.status(404).json({ message: 'Videojuego no encontrado' });
     }
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    handleControllerError(res, error, 'Error al actualizar el videojuego');
   }
 };
 
 export const deleteGame = async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-      return res.status(400).json({ message: 'ID de juego inválido' });
+      return res.status(400).json({ message: 'El identificador del videojuego no es válido' });
     }
 
     const game = await Game.findById(req.params.id);
@@ -165,6 +178,6 @@ export const deleteGame = async (req, res) => {
       res.status(404).json({ message: 'Videojuego no encontrado' });
     }
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    handleControllerError(res, error, 'Error al eliminar el videojuego');
   }
 };

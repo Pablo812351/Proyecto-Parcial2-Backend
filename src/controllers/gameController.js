@@ -96,11 +96,20 @@ export const createGame = async (req, res) => {
       return res.status(400).json({ message: 'La fecha de lanzamiento no tiene un formato de fecha válido' });
     }
 
+    const cleanTitle = title.trim();
+    // Validar que no exista un juego registrado con el mismo título (case-insensitive)
+    const existingGame = await Game.findOne({
+      title: { $regex: new RegExp(`^${escapeRegex(cleanTitle)}$`, 'i') }
+    });
+    if (existingGame) {
+      return res.status(400).json({ message: 'Ya existe un videojuego registrado con ese título. Por favor elija otro.' });
+    }
+
     const genreId = await findOrCreate(Genre, genreName);
     const developerId = await findOrCreate(Company, developerName);
 
     const game = new Game({
-      title: title.trim(),
+      title: cleanTitle,
       description: description.trim(),
       releaseDate: releaseDate ? new Date(releaseDate) : undefined,
       developer: developerId,
@@ -132,6 +141,18 @@ export const updateGame = async (req, res) => {
     }
     if (releaseDate !== undefined && releaseDate && isNaN(Date.parse(releaseDate))) {
       return res.status(400).json({ message: 'La fecha de lanzamiento no tiene un formato válido' });
+    }
+
+    // Validar que no exista OTRO juego con el mismo título
+    if (title !== undefined && title.trim()) {
+      const cleanTitle = title.trim();
+      const duplicateGame = await Game.findOne({
+        _id: { $ne: req.params.id },
+        title: { $regex: new RegExp(`^${escapeRegex(cleanTitle)}$`, 'i') }
+      });
+      if (duplicateGame) {
+        return res.status(400).json({ message: 'Ya existe otro videojuego registrado con ese título.' });
+      }
     }
 
     const game = await Game.findById(req.params.id);

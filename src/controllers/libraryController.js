@@ -225,6 +225,11 @@ export const removeFromLibrary = async (req, res) => {
 
     const deleted = await UserGame.findOneAndDelete({ user: req.user._id, game: gameId });
 
+    // Sincronizar: eliminar también de los favoritos del usuario
+    await User.findByIdAndUpdate(req.user._id, {
+      $pull: { favorites: gameId }
+    });
+
     if (!deleted) {
       return res.status(404).json({ message: 'El videojuego no se encuentra en tu biblioteca' });
     }

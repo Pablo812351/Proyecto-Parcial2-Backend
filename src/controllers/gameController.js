@@ -91,9 +91,23 @@ export const createGame = async (req, res) => {
     if (!imageUrl || !imageUrl.trim()) {
       return res.status(400).json({ message: 'La URL de la imagen de portada es obligatoria' });
     }
+    if (!imageUrl.trim().match(/^https?:\/\/.+/i)) {
+      return res.status(400).json({ message: 'La URL de la imagen debe comenzar con http:// o https://' });
+    }
 
-    if (releaseDate && isNaN(Date.parse(releaseDate))) {
-      return res.status(400).json({ message: 'La fecha de lanzamiento no tiene un formato de fecha válido' });
+    if (steamUrl && steamUrl.trim() && !steamUrl.trim().match(/^https?:\/\/.+/i)) {
+      return res.status(400).json({ message: 'El enlace de Steam debe comenzar con http:// o https://' });
+    }
+
+    if (releaseDate) {
+      const parsedDate = new Date(releaseDate);
+      const year = parsedDate.getFullYear();
+      const maxYear = new Date().getFullYear() + 10;
+      if (isNaN(parsedDate.getTime()) || isNaN(year) || year < 1950 || year > maxYear) {
+        return res.status(400).json({ 
+          message: `El año de lanzamiento debe estar comprendido entre 1950 y ${maxYear}` 
+        });
+      }
     }
 
     const cleanTitle = title.trim();
@@ -139,8 +153,21 @@ export const updateGame = async (req, res) => {
     if (description !== undefined && !description.trim()) {
       return res.status(400).json({ message: 'La descripción no puede estar vacía' });
     }
-    if (releaseDate !== undefined && releaseDate && isNaN(Date.parse(releaseDate))) {
-      return res.status(400).json({ message: 'La fecha de lanzamiento no tiene un formato válido' });
+    if (imageUrl !== undefined && imageUrl.trim() && !imageUrl.trim().match(/^https?:\/\/.+/i)) {
+      return res.status(400).json({ message: 'La URL de la imagen debe comenzar con http:// o https://' });
+    }
+    if (steamUrl !== undefined && steamUrl.trim() && !steamUrl.trim().match(/^https?:\/\/.+/i)) {
+      return res.status(400).json({ message: 'El enlace de Steam debe comenzar con http:// o https://' });
+    }
+    if (releaseDate !== undefined && releaseDate) {
+      const parsedDate = new Date(releaseDate);
+      const year = parsedDate.getFullYear();
+      const maxYear = new Date().getFullYear() + 10;
+      if (isNaN(parsedDate.getTime()) || isNaN(year) || year < 1950 || year > maxYear) {
+        return res.status(400).json({ 
+          message: `El año de lanzamiento debe estar comprendido entre 1950 y ${maxYear}` 
+        });
+      }
     }
 
     // Validar que no exista OTRO juego con el mismo título

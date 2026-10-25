@@ -37,6 +37,9 @@ export const formatErrorMessage = (error, fallbackMessage = 'Ha ocurrido un erro
     if (field === 'email' || (error.message && error.message.includes('email_1'))) {
       return { status: 400, message: 'El correo electrónico ya está registrado. Por favor utilice otro.' };
     }
+    if (field === 'title' || (error.message && error.message.includes('title_1'))) {
+      return { status: 400, message: 'Ya existe un videojuego registrado con ese título. Por favor elija otro.' };
+    }
     if (field === 'name' || (error.message && error.message.includes('name_1'))) {
       return { status: 400, message: 'Ya existe un elemento registrado con ese nombre.' };
     }

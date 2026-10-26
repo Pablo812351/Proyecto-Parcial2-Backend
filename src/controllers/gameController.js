@@ -101,7 +101,7 @@ export const createGame = async (req, res) => {
 
     if (releaseDate) {
       const parsedDate = new Date(releaseDate);
-      const year = parsedDate.getFullYear();
+      const year = parsedDate.getUTCFullYear();
       const maxYear = new Date().getFullYear() + 10;
       if (isNaN(parsedDate.getTime()) || isNaN(year) || year < 1950 || year > maxYear) {
         return res.status(400).json({ 
@@ -161,7 +161,7 @@ export const updateGame = async (req, res) => {
     }
     if (releaseDate !== undefined && releaseDate) {
       const parsedDate = new Date(releaseDate);
-      const year = parsedDate.getFullYear();
+      const year = parsedDate.getUTCFullYear();
       const maxYear = new Date().getFullYear() + 10;
       if (isNaN(parsedDate.getTime()) || isNaN(year) || year < 1950 || year > maxYear) {
         return res.status(400).json({ 

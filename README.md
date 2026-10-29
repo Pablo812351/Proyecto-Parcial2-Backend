@@ -105,8 +105,9 @@ Proyecto-Parcial2-Backend/
 │   ├── config/
 │   │   └── db.js            # Lógica de conexión a MongoDB mediante Mongoose con manejo de errores
 │   ├── controllers/
-│   │   ├── authController.js     # Registro, inicio de sesión y gestión básica de favoritos del usuario
+│   │   ├── authController.js     # Registro, inicio de sesión y favoritos del usuario
 │   │   ├── gameController.js     # Operaciones CRUD completas y validaciones para la entidad Game
+│   │   ├── userController.js     # Gestión de usuarios (listado, cambio de rol con blindaje y eliminación)
 │   │   ├── genreController.js    # Listado y creación de géneros con validación
 │   │   ├── companyController.js  # Listado y creación de empresas/desarrolladoras con validación
 │   │   └── libraryController.js  # Gestión de estados de biblioteca personal (Pendiente, Jugando, etc.)
@@ -119,6 +120,13 @@ Proyecto-Parcial2-Backend/
 │   │   ├── Genre.js         # Esquema y modelo de Géneros
 │   │   ├── Company.js       # Esquema y modelo de Empresas Desarrolladoras
 │   │   └── UserGame.js      # Esquema y modelo de la relación Usuario-Videojuego (Biblioteca personal)
+│   ├── routes/
+│   │   ├── authRoutes.js    # Rutas de registro, login y favoritos
+│   │   ├── gameRoutes.js    # Rutas de catálogo de videojuegos (CRUD)
+│   │   ├── userRoutes.js    # Rutas de gestión y administración de usuarios
+│   │   ├── genreRoutes.js   # Rutas de géneros
+│   │   ├── companyRoutes.js # Rutas de empresas desarrolladoras
+│   │   └── libraryRoutes.js # Rutas de biblioteca personal
 │   ├── utils/
 │   │   └── errorHandler.js  # Formateo y captura amigable de errores de MongoDB (E11000, validaciones, CastError)
 │   └── app.js               # Archivo principal: configuración de Express, CORS, parseo JSON y montaje de rutas
@@ -197,6 +205,9 @@ La API implementa un modelo de Control de Acceso Basado en Roles (RBAC):
 | Modificar Videojuegos existentes (`PUT /api/games/:id`) | ❌ | ❌ | ✅ |
 | Eliminar Videojuegos (`DELETE /api/games/:id`) | ❌ | ❌ | ✅ |
 | Crear Géneros o Empresas en el sistema | ❌ | ❌ | ✅ |
+| Ver listado de usuarios (`GET /api/users`) | ❌ | ❌ | ✅ |
+| Cambiar rol de usuario (`PUT /api/users/:id/role`) | ❌ | ❌ | ✅ |
+| Eliminar cuenta de usuario (`DELETE /api/users/:id`) | ❌ | ❌ | ✅ |
 
 ---
 
@@ -557,6 +568,90 @@ La API implementa un modelo de Control de Acceso Basado en Roles (RBAC):
 - **Errores Posibles**:
   - `400 Bad Request`: Campo `name` vacío o duplicado.
   - `401 / 403`: Falta de credenciales o permisos de administrador.
+
+---
+
+### 👥 6. Módulo de Gestión de Usuarios (`/api/users`)
+
+#### `GET /api/users`
+- **Descripción**: Retorna el listado completo de usuarios registrados en el sistema ordenados por rol y fecha de creación, omitiendo el hash de contraseña (`-password`) por seguridad.
+- **Acceso**: Restringido a Administradores (`protect`, `admin`).
+- **Respuesta Exitosa (200 OK)**:
+  ```json
+  [
+    {
+      "_id": "671ad2b3c4e5f67890123450",
+      "username": "admin",
+      "email": "admin@admin.com",
+      "role": "ADMIN_ROLE",
+      "favorites": [],
+      "createdAt": "2026-10-24T18:00:00.000Z"
+    },
+    {
+      "_id": "671ad2b3c4e5f67890123451",
+      "username": "usuario",
+      "email": "user@user.com",
+      "role": "USER_ROLE",
+      "favorites": [],
+      "createdAt": "2026-10-24T18:05:00.000Z"
+    }
+  ]
+  ```
+- **Errores Posibles**:
+  - `401 Unauthorized`: Falta de token o token inválido/expirado.
+  - `403 Forbidden`: El usuario autenticado no posee rol de Administrador.
+
+---
+
+#### `PUT /api/users/:id/role`
+- **Descripción**: Actualiza el rol de un usuario existente (permite ascender a `ADMIN_ROLE` o degradar a `USER_ROLE`). Incluye una **regla de seguridad de blindaje**: si solo queda un único administrador en todo el sistema, se rechaza la revocación del rol para evitar el bloqueo total de la plataforma.
+- **Acceso**: Restringido a Administradores (`protect`, `admin`).
+- **Parámetros de Ruta**:
+  - `id`: Identificador MongoDB ObjectId del usuario a modificar.
+- **Request Body**:
+  ```json
+  { "role": "ADMIN_ROLE" }
+  ```
+- **Respuesta Exitosa (200 OK)**:
+  ```json
+  {
+    "_id": "671ad2b3c4e5f67890123451",
+    "username": "usuario",
+    "email": "user@user.com",
+    "role": "ADMIN_ROLE",
+    "message": "Rol de \"usuario\" actualizado a Administrador"
+  }
+  ```
+- **Errores Posibles**:
+  - `400 Bad Request`: ID de usuario no válido, rol diferente a `USER_ROLE` o `ADMIN_ROLE`, o intento de quitar el rol al **único administrador del sistema**:
+    ```json
+    { "message": "No es posible quitar el rol de administrador porque es el único administrador del sistema." }
+    ```
+  - `404 Not Found`: Usuario no encontrado.
+  - `401 / 403`: Falta de credenciales o permisos de administrador.
+
+---
+
+#### `DELETE /api/users/:id`
+- **Descripción**: Elimina la cuenta de un usuario del sistema y purga en cascada todas sus relaciones asociadas en la colección `UserGame` (biblioteca personal). Incluye **blindaje de seguridad**: impide eliminar la cuenta del único administrador del sistema.
+- **Acceso**: Restringido a Administradores (`protect`, `admin`).
+- **Parámetros de Ruta**:
+  - `id`: Identificador MongoDB ObjectId del usuario a eliminar.
+- **Respuesta Exitosa (200 OK)**:
+  ```json
+  {
+    "message": "Cuenta del usuario \"jugador1\" eliminada correctamente."
+  }
+  ```
+- **Errores Posibles**:
+  - `400 Bad Request`: ID no válido o intento de eliminar al **único administrador del sistema**:
+    ```json
+    { "message": "No es posible eliminar al único administrador del sistema." }
+    ```
+  - `404 Not Found`: Usuario no encontrado.
+  - `401 / 403`: Falta de credenciales o permisos de administrador.
+
+---
 
 ---
 

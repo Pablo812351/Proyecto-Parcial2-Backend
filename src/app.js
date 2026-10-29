@@ -10,6 +10,8 @@ import gameRoutes from './routes/gameRoutes.js';
 import genreRoutes from './routes/genreRoutes.js';
 import companyRoutes from './routes/companyRoutes.js';
 import libraryRoutes from './routes/libraryRoutes.js';
+import userRoutes from './routes/userRoutes.js';
+import { notFound, errorHandler } from './middlewares/errorMiddleware.js';
 
 // Connect to Database
 connectDB();
@@ -22,6 +24,7 @@ app.use(express.json());
 
 // Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
 app.use('/api/games', gameRoutes);
 app.use('/api/genres', genreRoutes);
 app.use('/api/companies', companyRoutes);
@@ -33,7 +36,6 @@ app.get('/', (req, res) => {
 });
 
 // Error handling middlewares
-import { notFound, errorHandler } from './middlewares/errorMiddleware.js';
 app.use(notFound);
 app.use(errorHandler);
 

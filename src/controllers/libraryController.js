@@ -79,7 +79,7 @@ export const addOrUpdateLibraryItem = async (req, res) => {
   try {
     const { gameId, status, isFavorite } = req.body;
 
-    if (!gameId || !mongoose.Types.ObjectId.isValid(gameId)) {
+    if (!gameId || typeof gameId !== 'string' || !mongoose.Types.ObjectId.isValid(gameId)) {
       return res.status(400).json({ message: 'El identificador del videojuego es inválido o no fue provisto' });
     }
 

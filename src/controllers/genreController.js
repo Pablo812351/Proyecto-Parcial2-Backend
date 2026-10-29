@@ -14,8 +14,8 @@ export const createGenre = async (req, res) => {
   try {
     const { name, description } = req.body;
 
-    if (!name || !name.trim()) {
-      return res.status(400).json({ message: 'El nombre del género es obligatorio' });
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({ message: 'El nombre del género es obligatorio y debe ser texto' });
     }
 
     const cleanName = name.trim();

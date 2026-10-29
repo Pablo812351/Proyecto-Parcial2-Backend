@@ -76,26 +76,26 @@ export const createGame = async (req, res) => {
     const { title, description, releaseDate, developerName, genreName, steamUrl, imageUrl } = req.body;
 
     // Validaciones estrictas de campos obligatorios
-    if (!title || !title.trim()) {
-      return res.status(400).json({ message: 'El título del videojuego es obligatorio' });
+    if (!title || typeof title !== 'string' || !title.trim()) {
+      return res.status(400).json({ message: 'El título del videojuego es obligatorio y debe ser texto' });
     }
-    if (!description || !description.trim()) {
-      return res.status(400).json({ message: 'La descripción del videojuego es obligatoria' });
+    if (!description || typeof description !== 'string' || !description.trim()) {
+      return res.status(400).json({ message: 'La descripción del videojuego es obligatoria y debe ser texto' });
     }
-    if (!developerName || !developerName.trim()) {
+    if (!developerName || typeof developerName !== 'string' || !developerName.trim()) {
       return res.status(400).json({ message: 'El nombre de la empresa/desarrolladora es obligatorio' });
     }
-    if (!genreName || !genreName.trim()) {
+    if (!genreName || typeof genreName !== 'string' || !genreName.trim()) {
       return res.status(400).json({ message: 'El género del videojuego es obligatorio' });
     }
-    if (!imageUrl || !imageUrl.trim()) {
+    if (!imageUrl || typeof imageUrl !== 'string' || !imageUrl.trim()) {
       return res.status(400).json({ message: 'La URL de la imagen de portada es obligatoria' });
     }
     if (!imageUrl.trim().match(/^https?:\/\/.+/i)) {
       return res.status(400).json({ message: 'La URL de la imagen debe comenzar con http:// o https://' });
     }
 
-    if (steamUrl && steamUrl.trim() && !steamUrl.trim().match(/^https?:\/\/.+/i)) {
+    if (steamUrl && typeof steamUrl === 'string' && steamUrl.trim() && !steamUrl.trim().match(/^https?:\/\/.+/i)) {
       return res.status(400).json({ message: 'El enlace de Steam debe comenzar con http:// o https://' });
     }
 
@@ -147,16 +147,16 @@ export const updateGame = async (req, res) => {
 
     const { title, description, releaseDate, developerName, genreName, steamUrl, imageUrl } = req.body;
 
-    if (title !== undefined && !title.trim()) {
-      return res.status(400).json({ message: 'El título no puede estar vacío' });
+    if (title !== undefined && (typeof title !== 'string' || !title.trim())) {
+      return res.status(400).json({ message: 'El título debe ser texto y no puede estar vacío' });
     }
-    if (description !== undefined && !description.trim()) {
-      return res.status(400).json({ message: 'La descripción no puede estar vacía' });
+    if (description !== undefined && (typeof description !== 'string' || !description.trim())) {
+      return res.status(400).json({ message: 'La descripción debe ser texto y no puede estar vacía' });
     }
-    if (imageUrl !== undefined && imageUrl.trim() && !imageUrl.trim().match(/^https?:\/\/.+/i)) {
+    if (imageUrl !== undefined && (typeof imageUrl !== 'string' || !imageUrl.trim() || !imageUrl.trim().match(/^https?:\/\/.+/i))) {
       return res.status(400).json({ message: 'La URL de la imagen debe comenzar con http:// o https://' });
     }
-    if (steamUrl !== undefined && steamUrl.trim() && !steamUrl.trim().match(/^https?:\/\/.+/i)) {
+    if (steamUrl !== undefined && typeof steamUrl === 'string' && steamUrl.trim() && !steamUrl.trim().match(/^https?:\/\/.+/i)) {
       return res.status(400).json({ message: 'El enlace de Steam debe comenzar con http:// o https://' });
     }
     if (releaseDate !== undefined && releaseDate) {

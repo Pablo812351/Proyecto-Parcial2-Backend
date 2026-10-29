@@ -14,8 +14,8 @@ export const createCompany = async (req, res) => {
   try {
     const { name } = req.body;
 
-    if (!name || !name.trim()) {
-      return res.status(400).json({ message: 'El nombre de la empresa es obligatorio' });
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({ message: 'El nombre de la empresa es obligatorio y debe ser texto' });
     }
 
     const cleanName = name.trim();

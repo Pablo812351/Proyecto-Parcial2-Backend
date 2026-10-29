@@ -17,8 +17,12 @@ export const register = async (req, res) => {
   const { username, email, password } = req.body;
   
   try {
-    // 1. Validar campos requeridos
-    if (!username || !username.trim() || !email || !email.trim() || !password) {
+    // 1. Validar tipos de datos y campos requeridos
+    if (typeof username !== 'string' || typeof email !== 'string' || typeof password !== 'string') {
+      return res.status(400).json({ message: 'Todos los campos (usuario, email y contraseña) deben ser texto' });
+    }
+
+    if (!username.trim() || !email.trim() || !password) {
       return res.status(400).json({ message: 'Todos los campos (usuario, email y contraseña) son obligatorios' });
     }
 
@@ -81,7 +85,11 @@ export const login = async (req, res) => {
   const { email, password } = req.body;
   
   try {
-    if (!email || !email.trim() || !password) {
+    if (typeof email !== 'string' || typeof password !== 'string') {
+      return res.status(400).json({ message: 'El correo electrónico y la contraseña deben ser texto' });
+    }
+
+    if (!email.trim() || !password) {
       return res.status(400).json({ message: 'Por favor ingrese correo electrónico y contraseña' });
     }
 

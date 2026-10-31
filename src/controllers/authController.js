@@ -1,17 +1,14 @@
 import jwt from 'jsonwebtoken';
-import mongoose from 'mongoose';
 import User from '../models/User.js';
 import Game from '../models/Game.js';
 import UserGame from '../models/UserGame.js';
-import { handleControllerError, escapeRegex } from '../utils/errorHandler.js';
+import { handleControllerError, escapeRegex, isValidObjectId, EMAIL_REGEX } from '../utils/errorHandler.js';
 
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
     expiresIn: '30d'
   });
 };
-
-const EMAIL_REGEX = /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/;
 
 export const register = async (req, res) => {
   const { username, email, password } = req.body;
@@ -30,18 +27,21 @@ export const register = async (req, res) => {
     const cleanEmail = email.trim().toLowerCase();
 
     // 2. Validar longitud del nombre de usuario
-    if (cleanUsername.length < 3) {
-      return res.status(400).json({ message: 'El nombre de usuario debe tener al menos 3 caracteres' });
+    if (cleanUsername.length < 3 || cleanUsername.length > 30) {
+      return res.status(400).json({ message: 'El nombre de usuario debe tener entre 3 y 30 caracteres' });
     }
 
-    // 3. Validar formato de correo electrónico
-    if (!EMAIL_REGEX.test(cleanEmail)) {
+    // 3. Validar formato y longitud de correo electrónico
+    if (cleanEmail.length > 254 || !EMAIL_REGEX.test(cleanEmail)) {
       return res.status(400).json({ message: 'Por favor ingrese un correo electrónico válido' });
     }
 
-    // 4. Validar longitud de contraseña
+    // 4. Validar longitud de contraseña (límite de 72 caracteres por algoritmo Bcrypt)
     if (password.length < 6) {
       return res.status(400).json({ message: 'La contraseña debe tener al menos 6 caracteres' });
+    }
+    if (password.length > 72) {
+      return res.status(400).json({ message: 'La contraseña no puede superar los 72 caracteres' });
     }
 
     // 5. Validar si el email ya existe
@@ -94,6 +94,10 @@ export const login = async (req, res) => {
     }
 
     const cleanEmail = email.trim().toLowerCase();
+    if (cleanEmail.length > 254 || password.length > 128) {
+      return res.status(401).json({ message: 'Correo electrónico o contraseña inválidos' });
+    }
+
     const user = await User.findOne({ email: cleanEmail });
 
     if (user && (await user.matchPassword(password))) {
@@ -129,7 +133,7 @@ export const toggleFavorite = async (req, res) => {
   try {
     const gameId = req.params.gameId;
 
-    if (!mongoose.Types.ObjectId.isValid(gameId)) {
+    if (!isValidObjectId(gameId)) {
       return res.status(400).json({ message: 'El identificador del videojuego no es válido' });
     }
 

@@ -13,16 +13,33 @@ import libraryRoutes from './routes/libraryRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import { notFound, errorHandler } from './middlewares/errorMiddleware.js';
 
-// Connect to Database
+// Validar variables de entorno críticas antes de iniciar
+if (!process.env.MONGO_URI || !process.env.JWT_SECRET) {
+  console.error('Error crítico: Las variables MONGO_URI y JWT_SECRET deben estar definidas en el archivo .env');
+  process.exit(1);
+}
+
+// Conectar a la base de datos
 connectDB();
 
 const app = express();
 
-// Middlewares
-app.use(cors());
-app.use(express.json());
+// Ocultar cabecera de tecnología del servidor por seguridad
+app.disable('x-powered-by');
 
-// Routes
+// Cabeceras HTTP de seguridad básicas
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
+
+// Middlewares globales
+app.use(cors());
+app.use(express.json({ limit: '50kb' }));
+
+// Rutas de la API
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/games', gameRoutes);
@@ -30,17 +47,17 @@ app.use('/api/genres', genreRoutes);
 app.use('/api/companies', companyRoutes);
 app.use('/api/library', libraryRoutes);
 
-// Basic route
+// Ruta raíz de estado
 app.get('/', (req, res) => {
-  res.send('Gaming Hub API is running...');
+  res.send('API de Gaming Hub en funcionamiento...');
 });
 
-// Error handling middlewares
+// Middlewares de manejo de errores
 app.use(notFound);
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`Servidor ejecutándose en el puerto ${PORT}`);
 });

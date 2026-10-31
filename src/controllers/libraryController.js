@@ -1,8 +1,7 @@
-import mongoose from 'mongoose';
 import UserGame from '../models/UserGame.js';
 import Game from '../models/Game.js';
 import User from '../models/User.js';
-import { handleControllerError } from '../utils/errorHandler.js';
+import { handleControllerError, isValidObjectId } from '../utils/errorHandler.js';
 
 // Estados válidos
 const VALID_STATUSES = ['Pendiente', 'Jugando', 'Completado', 'Abandonado'];
@@ -49,7 +48,7 @@ export const getGameLibraryStatus = async (req, res) => {
   try {
     const { gameId } = req.params;
 
-    if (!mongoose.Types.ObjectId.isValid(gameId)) {
+    if (!isValidObjectId(gameId)) {
       return res.status(400).json({ message: 'El identificador del videojuego no es válido' });
     }
 
@@ -79,8 +78,20 @@ export const addOrUpdateLibraryItem = async (req, res) => {
   try {
     const { gameId, status, isFavorite } = req.body;
 
-    if (!gameId || typeof gameId !== 'string' || !mongoose.Types.ObjectId.isValid(gameId)) {
+    if (!isValidObjectId(gameId)) {
       return res.status(400).json({ message: 'El identificador del videojuego es inválido o no fue provisto' });
+    }
+
+    if (isFavorite !== undefined && typeof isFavorite !== 'boolean') {
+      return res.status(400).json({ message: 'El campo isFavorite debe ser un valor booleano' });
+    }
+
+    if (status !== undefined && status !== null && status !== '') {
+      if (typeof status !== 'string' || !VALID_STATUSES.includes(status)) {
+        return res.status(400).json({ 
+          message: `Estado de juego inválido. Debe ser uno de: ${VALID_STATUSES.join(', ')}` 
+        });
+      }
     }
 
     const game = await Game.findById(gameId);
@@ -88,41 +99,55 @@ export const addOrUpdateLibraryItem = async (req, res) => {
       return res.status(404).json({ message: 'Videojuego no encontrado' });
     }
 
-    if (status && !VALID_STATUSES.includes(status)) {
-      return res.status(400).json({ 
-        message: `Estado de juego inválido. Debe ser uno de: ${VALID_STATUSES.join(', ')}` 
+    let item = await UserGame.findOne({ user: req.user._id, game: gameId });
+
+    const nextStatus = status !== undefined
+      ? ((status && VALID_STATUSES.includes(status)) ? status : null)
+      : (item ? item.status : null);
+
+    const nextFavorite = typeof isFavorite === 'boolean'
+      ? isFavorite
+      : (item ? item.isFavorite : false);
+
+    // Si el elemento queda sin estado y sin ser favorito, limpiarlo para evitar registros huérfanos
+    if (!nextStatus && !nextFavorite) {
+      if (item) {
+        await UserGame.deleteOne({ _id: item._id });
+      }
+      await User.findByIdAndUpdate(req.user._id, { $pull: { favorites: gameId } });
+      return res.status(200).json({
+        removed: true,
+        inLibrary: false,
+        item: null,
+        status: null,
+        isFavorite: false,
+        message: 'Videojuego removido de tu biblioteca'
       });
     }
 
-    let item = await UserGame.findOne({ user: req.user._id, game: gameId });
-
     if (item) {
-      if (status !== undefined) {
-        item.status = (status && VALID_STATUSES.includes(status)) ? status : null;
-      }
-      if (typeof isFavorite === 'boolean') item.isFavorite = isFavorite;
+      item.status = nextStatus;
+      item.isFavorite = nextFavorite;
       await item.save();
     } else {
       item = await UserGame.create({
         user: req.user._id,
         game: gameId,
-        status: (status && VALID_STATUSES.includes(status)) ? status : null,
-        isFavorite: typeof isFavorite === 'boolean' ? isFavorite : false
+        status: nextStatus,
+        isFavorite: nextFavorite
       });
     }
 
     // Sincronizar con el array de favoritos del modelo User
-    if (typeof isFavorite === 'boolean') {
-      const user = await User.findById(req.user._id);
-      if (user) {
-        const hasFav = user.favorites.some(id => id.toString() === gameId);
-        if (isFavorite && !hasFav) {
-          user.favorites.push(gameId);
-          await user.save();
-        } else if (!isFavorite && hasFav) {
-          user.favorites = user.favorites.filter(id => id.toString() !== gameId);
-          await user.save();
-        }
+    const user = await User.findById(req.user._id);
+    if (user) {
+      const hasFav = user.favorites.some(id => id.toString() === gameId);
+      if (nextFavorite && !hasFav) {
+        user.favorites.push(gameId);
+        await user.save();
+      } else if (!nextFavorite && hasFav) {
+        user.favorites = user.favorites.filter(id => id.toString() !== gameId);
+        await user.save();
       }
     }
 
@@ -148,8 +173,20 @@ export const updateLibraryItem = async (req, res) => {
     const { gameId } = req.params;
     const { status, isFavorite } = req.body;
 
-    if (!mongoose.Types.ObjectId.isValid(gameId)) {
+    if (!isValidObjectId(gameId)) {
       return res.status(400).json({ message: 'El identificador del videojuego no es válido' });
+    }
+
+    if (isFavorite !== undefined && typeof isFavorite !== 'boolean') {
+      return res.status(400).json({ message: 'El campo isFavorite debe ser un valor booleano' });
+    }
+
+    if (status !== undefined && status !== null && status !== '') {
+      if (typeof status !== 'string' || !VALID_STATUSES.includes(status)) {
+        return res.status(400).json({ 
+          message: `Estado de juego inválido. Debe ser uno de: ${VALID_STATUSES.join(', ')}` 
+        });
+      }
     }
 
     const game = await Game.findById(gameId);
@@ -157,44 +194,56 @@ export const updateLibraryItem = async (req, res) => {
       return res.status(404).json({ message: 'Videojuego no encontrado' });
     }
 
-    if (status !== undefined && status) {
-      if (!VALID_STATUSES.includes(status)) {
-        return res.status(400).json({ 
-          message: `Estado de juego inválido. Debe ser uno de: ${VALID_STATUSES.join(', ')}` 
-        });
-      }
-    }
-
     let item = await UserGame.findOne({ user: req.user._id, game: gameId });
+
+    const nextStatus = status !== undefined
+      ? ((status && VALID_STATUSES.includes(status)) ? status : null)
+      : (item ? item.status : null);
+
+    const nextFavorite = typeof isFavorite === 'boolean'
+      ? isFavorite
+      : (item ? item.isFavorite : false);
+
+    // Si queda sin estado y sin ser favorito, limpiar documento huérfano
+    if (!nextStatus && !nextFavorite) {
+      if (item) {
+        await UserGame.deleteOne({ _id: item._id });
+      }
+      await User.findByIdAndUpdate(req.user._id, { $pull: { favorites: gameId } });
+      return res.json({
+        removed: true,
+        inLibrary: false,
+        item: null,
+        status: null,
+        isFavorite: false,
+        message: 'Videojuego removido de tu biblioteca'
+      });
+    }
 
     if (!item) {
       item = new UserGame({
         user: req.user._id,
         game: gameId,
-        status: (status && VALID_STATUSES.includes(status)) ? status : null,
-        isFavorite: typeof isFavorite === 'boolean' ? isFavorite : false
+        status: nextStatus,
+        isFavorite: nextFavorite
       });
     } else {
-      if (status !== undefined) {
-        item.status = (status && VALID_STATUSES.includes(status)) ? status : null;
-      }
-      if (typeof isFavorite === 'boolean') item.isFavorite = isFavorite;
+      item.status = nextStatus;
+      item.isFavorite = nextFavorite;
     }
 
     await item.save();
 
     // Sincronizar con el array de favoritos de User
-    if (typeof isFavorite === 'boolean') {
-      const user = await User.findById(req.user._id);
-      if (user) {
-        const hasFav = user.favorites.some(id => id.toString() === gameId);
-        if (isFavorite && !hasFav) {
-          user.favorites.push(gameId);
-          await user.save();
-        } else if (!isFavorite && hasFav) {
-          user.favorites = user.favorites.filter(id => id.toString() !== gameId);
-          await user.save();
-        }
+    const user = await User.findById(req.user._id);
+    if (user) {
+      const hasFav = user.favorites.some(id => id.toString() === gameId);
+      if (nextFavorite && !hasFav) {
+        user.favorites.push(gameId);
+        await user.save();
+      } else if (!nextFavorite && hasFav) {
+        user.favorites = user.favorites.filter(id => id.toString() !== gameId);
+        await user.save();
       }
     }
 
@@ -219,7 +268,7 @@ export const removeFromLibrary = async (req, res) => {
   try {
     const { gameId } = req.params;
 
-    if (!mongoose.Types.ObjectId.isValid(gameId)) {
+    if (!isValidObjectId(gameId)) {
       return res.status(400).json({ message: 'El identificador del videojuego no es válido' });
     }
 
@@ -247,7 +296,7 @@ export const toggleLibraryFavorite = async (req, res) => {
   try {
     const { gameId } = req.params;
 
-    if (!mongoose.Types.ObjectId.isValid(gameId)) {
+    if (!isValidObjectId(gameId)) {
       return res.status(400).json({ message: 'El identificador del videojuego no es válido' });
     }
 

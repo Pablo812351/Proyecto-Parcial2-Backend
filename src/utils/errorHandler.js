@@ -9,6 +9,14 @@ export const escapeRegex = (string = '') => {
   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 };
 
+// Valida estrictamente que un identificador sea un ObjectId hexadecimal de 24 caracteres
+export const isValidObjectId = (id) => {
+  return typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id);
+};
+
+// Expresión regular segura contra ReDoS (tiempo lineal) para validación de correos electrónicos
+export const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}$/;
+
 export const formatErrorMessage = (error, fallbackMessage = 'Ha ocurrido un error en el servidor. Por favor intente más tarde.') => {
   if (!error) {
     return { status: 500, message: fallbackMessage };
@@ -84,9 +92,12 @@ export const formatErrorMessage = (error, fallbackMessage = 'Ha ocurrido un erro
     return { status: 401, message: 'Su sesión ha expirado. Por favor inicie sesión nuevamente.' };
   }
 
-  // 5. Error de parseo de JSON en body
+  // 5. Error de parseo de JSON en body o tamaño excesivo de payload
   if (error.type === 'entity.parse.failed' || (error instanceof SyntaxError && 'body' in error)) {
     return { status: 400, message: 'El formato de los datos enviados no es un JSON válido.' };
+  }
+  if (error.type === 'entity.too.large' || error.status === 413) {
+    return { status: 413, message: 'El tamaño de los datos enviados excede el límite permitido.' };
   }
 
   // 6. Mensaje de error personalizado previo

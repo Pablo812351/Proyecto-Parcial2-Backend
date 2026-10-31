@@ -18,7 +18,20 @@ export const createGenre = async (req, res) => {
       return res.status(400).json({ message: 'El nombre del género es obligatorio y debe ser texto' });
     }
 
+    if (description !== undefined && description !== null && typeof description !== 'string') {
+      return res.status(400).json({ message: 'La descripción del género debe ser texto' });
+    }
+
     const cleanName = name.trim();
+    if (cleanName.length > 60) {
+      return res.status(400).json({ message: 'El nombre del género no puede superar los 60 caracteres' });
+    }
+
+    const cleanDescription = description ? description.trim() : '';
+    if (cleanDescription.length > 500) {
+      return res.status(400).json({ message: 'La descripción no puede superar los 500 caracteres' });
+    }
+
     const safeName = escapeRegex(cleanName);
     const genreExists = await Genre.findOne({ name: { $regex: new RegExp(`^${safeName}$`, 'i') } });
     
@@ -28,7 +41,7 @@ export const createGenre = async (req, res) => {
 
     const genre = new Genre({
       name: cleanName,
-      description: description ? description.trim() : ''
+      description: cleanDescription
     });
 
     const createdGenre = await genre.save();

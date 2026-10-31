@@ -3,12 +3,15 @@ import mongoose from 'mongoose';
 const gameSchema = new mongoose.Schema({
   title: {
     type: String,
-    required: true,
+    required: [true, 'El título del videojuego es obligatorio'],
     unique: true,
-    trim: true
+    trim: true,
+    maxlength: [150, 'El título del videojuego no puede superar los 150 caracteres']
   },
   description: {
-    type: String
+    type: String,
+    trim: true,
+    maxlength: [3000, 'La descripción no puede superar los 3000 caracteres']
   },
   releaseDate: {
     type: Date
@@ -22,10 +25,20 @@ const gameSchema = new mongoose.Schema({
     ref: 'Genre'
   },
   steamUrl: {
-    type: String
+    type: String,
+    trim: true,
+    validate: {
+      validator: (v) => !v || /^https?:\/\/.+/i.test(v),
+      message: 'El enlace de Steam debe comenzar con http:// o https://'
+    }
   },
   imageUrl: {
-    type: String
+    type: String,
+    trim: true,
+    validate: {
+      validator: (v) => !v || /^https?:\/\/.+/i.test(v),
+      message: 'La URL de la imagen debe comenzar con http:// o https://'
+    }
   }
 }, {
   timestamps: true

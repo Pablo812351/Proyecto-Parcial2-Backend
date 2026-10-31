@@ -19,6 +19,9 @@ export const createCompany = async (req, res) => {
     }
 
     const cleanName = name.trim();
+    if (cleanName.length > 80) {
+      return res.status(400).json({ message: 'El nombre de la empresa no puede superar los 80 caracteres' });
+    }
     const safeName = escapeRegex(cleanName);
     const companyExists = await Company.findOne({ name: { $regex: new RegExp(`^${safeName}$`, 'i') } });
     

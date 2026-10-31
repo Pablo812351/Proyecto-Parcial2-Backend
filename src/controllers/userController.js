@@ -1,7 +1,6 @@
-import mongoose from 'mongoose';
 import User from '../models/User.js';
 import UserGame from '../models/UserGame.js';
-import { handleControllerError } from '../utils/errorHandler.js';
+import { handleControllerError, isValidObjectId } from '../utils/errorHandler.js';
 
 // @desc    Obtener lista de todos los usuarios
 // @route   GET /api/users
@@ -26,11 +25,11 @@ export const updateUserRole = async (req, res) => {
   const { role } = req.body;
 
   try {
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    if (!isValidObjectId(id)) {
       return res.status(400).json({ message: 'El identificador de usuario no es válido' });
     }
 
-    if (!['ADMIN_ROLE', 'USER_ROLE'].includes(role)) {
+    if (typeof role !== 'string' || !['ADMIN_ROLE', 'USER_ROLE'].includes(role)) {
       return res.status(400).json({ message: 'El rol especificado no es válido' });
     }
 
@@ -71,7 +70,7 @@ export const deleteUser = async (req, res) => {
   const { id } = req.params;
 
   try {
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    if (!isValidObjectId(id)) {
       return res.status(400).json({ message: 'El identificador de usuario no es válido' });
     }
 

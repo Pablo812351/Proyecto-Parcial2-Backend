@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcrypt';
+import { EMAIL_REGEX } from '../utils/errorHandler.js';
 
 const userSchema = new mongoose.Schema({
   username: {
@@ -7,7 +8,8 @@ const userSchema = new mongoose.Schema({
     required: [true, 'El nombre de usuario es obligatorio'],
     unique: true,
     trim: true,
-    minlength: [3, 'El nombre de usuario debe tener al menos 3 caracteres']
+    minlength: [3, 'El nombre de usuario debe tener al menos 3 caracteres'],
+    maxlength: [30, 'El nombre de usuario no puede superar los 30 caracteres']
   },
   email: {
     type: String,
@@ -15,7 +17,8 @@ const userSchema = new mongoose.Schema({
     unique: true,
     trim: true,
     lowercase: true,
-    match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/, 'Por favor ingrese un correo electrónico válido']
+    maxlength: [254, 'El correo electrónico no puede superar los 254 caracteres'],
+    match: [EMAIL_REGEX, 'Por favor ingrese un correo electrónico válido']
   },
   password: {
     type: String,
@@ -38,9 +41,9 @@ const userSchema = new mongoose.Schema({
   timestamps: true
 });
 
-userSchema.pre('save', async function (next) {
+userSchema.pre('save', async function () {
   if (!this.isModified('password')) {
-    return next();
+    return;
   }
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);

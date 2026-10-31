@@ -1,34 +1,56 @@
-import mongoose from 'mongoose';
 import Game from '../models/Game.js';
 import Genre from '../models/Genre.js';
 import Company from '../models/Company.js';
 import UserGame from '../models/UserGame.js';
 import User from '../models/User.js';
-import { handleControllerError, escapeRegex } from '../utils/errorHandler.js';
+import { handleControllerError, escapeRegex, isValidObjectId } from '../utils/errorHandler.js';
 
 export const getGames = async (req, res) => {
   try {
-    const { search } = req.query;
-    let query = {};
+    const { search, genre, developer } = req.query;
+    const conditions = [];
 
-    if (search && search.trim()) {
-      const safeSearch = escapeRegex(search.trim());
-
-      // Búsqueda insensible a mayúsculas y protegida contra caracteres de regex
-      const matchingGenres = await Genre.find({ name: { $regex: safeSearch, $options: 'i' } });
-      const matchingCompanies = await Company.find({ name: { $regex: safeSearch, $options: 'i' } });
-
-      const genreIds = matchingGenres.map(g => g._id);
-      const companyIds = matchingCompanies.map(c => c._id);
-
-      query = {
-        $or: [
-          { title: { $regex: safeSearch, $options: 'i' } },
-          { genre: { $in: genreIds } },
-          { developer: { $in: companyIds } }
-        ]
-      };
+    if (genre !== undefined && genre !== '') {
+      if (typeof genre !== 'string' || !isValidObjectId(genre.trim())) {
+        return res.status(400).json({ message: 'El identificador de género no es válido' });
+      }
+      conditions.push({ genre: genre.trim() });
     }
+
+    if (developer !== undefined && developer !== '') {
+      if (typeof developer !== 'string' || !isValidObjectId(developer.trim())) {
+        return res.status(400).json({ message: 'El identificador de desarrolladora no es válido' });
+      }
+      conditions.push({ developer: developer.trim() });
+    }
+
+    if (search !== undefined && search !== '') {
+      if (typeof search !== 'string') {
+        return res.status(400).json({ message: 'El parámetro de búsqueda debe ser texto' });
+      }
+
+      const trimmedSearch = search.trim().slice(0, 100);
+      if (trimmedSearch) {
+        const safeSearch = escapeRegex(trimmedSearch);
+
+        // Búsqueda insensible a mayúsculas y protegida contra caracteres de regex
+        const matchingGenres = await Genre.find({ name: { $regex: safeSearch, $options: 'i' } });
+        const matchingCompanies = await Company.find({ name: { $regex: safeSearch, $options: 'i' } });
+
+        const genreIds = matchingGenres.map(g => g._id);
+        const companyIds = matchingCompanies.map(c => c._id);
+
+        conditions.push({
+          $or: [
+            { title: { $regex: safeSearch, $options: 'i' } },
+            { genre: { $in: genreIds } },
+            { developer: { $in: companyIds } }
+          ]
+        });
+      }
+    }
+
+    const query = conditions.length > 0 ? { $and: conditions } : {};
 
     const games = await Game.find(query)
       .populate('developer', 'name')
@@ -41,7 +63,7 @@ export const getGames = async (req, res) => {
 
 export const getGameById = async (req, res) => {
   try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    if (!isValidObjectId(req.params.id)) {
       return res.status(400).json({ message: 'El identificador del videojuego no es válido' });
     }
 
@@ -75,18 +97,30 @@ export const createGame = async (req, res) => {
   try {
     const { title, description, releaseDate, developerName, genreName, steamUrl, imageUrl } = req.body;
 
-    // Validaciones estrictas de campos obligatorios
+    // Validaciones estrictas de campos obligatorios y tipos de datos
     if (!title || typeof title !== 'string' || !title.trim()) {
       return res.status(400).json({ message: 'El título del videojuego es obligatorio y debe ser texto' });
+    }
+    if (title.trim().length > 150) {
+      return res.status(400).json({ message: 'El título del videojuego no puede superar los 150 caracteres' });
     }
     if (!description || typeof description !== 'string' || !description.trim()) {
       return res.status(400).json({ message: 'La descripción del videojuego es obligatoria y debe ser texto' });
     }
+    if (description.trim().length > 3000) {
+      return res.status(400).json({ message: 'La descripción no puede superar los 3000 caracteres' });
+    }
     if (!developerName || typeof developerName !== 'string' || !developerName.trim()) {
       return res.status(400).json({ message: 'El nombre de la empresa/desarrolladora es obligatorio' });
     }
+    if (developerName.trim().length > 80) {
+      return res.status(400).json({ message: 'El nombre de la empresa no puede superar los 80 caracteres' });
+    }
     if (!genreName || typeof genreName !== 'string' || !genreName.trim()) {
       return res.status(400).json({ message: 'El género del videojuego es obligatorio' });
+    }
+    if (genreName.trim().length > 60) {
+      return res.status(400).json({ message: 'El nombre del género no puede superar los 60 caracteres' });
     }
     if (!imageUrl || typeof imageUrl !== 'string' || !imageUrl.trim()) {
       return res.status(400).json({ message: 'La URL de la imagen de portada es obligatoria' });
@@ -95,11 +129,17 @@ export const createGame = async (req, res) => {
       return res.status(400).json({ message: 'La URL de la imagen debe comenzar con http:// o https://' });
     }
 
-    if (steamUrl && typeof steamUrl === 'string' && steamUrl.trim() && !steamUrl.trim().match(/^https?:\/\/.+/i)) {
+    if (steamUrl !== undefined && steamUrl !== null && typeof steamUrl !== 'string') {
+      return res.status(400).json({ message: 'El enlace de Steam debe ser texto' });
+    }
+    if (typeof steamUrl === 'string' && steamUrl.trim() && !steamUrl.trim().match(/^https?:\/\/.+/i)) {
       return res.status(400).json({ message: 'El enlace de Steam debe comenzar con http:// o https://' });
     }
 
-    if (releaseDate) {
+    if (releaseDate !== undefined && releaseDate !== null && releaseDate !== '') {
+      if (typeof releaseDate !== 'string') {
+        return res.status(400).json({ message: 'La fecha de lanzamiento debe ser una cadena de fecha válida' });
+      }
       const parsedDate = new Date(releaseDate);
       const year = parsedDate.getUTCFullYear();
       const maxYear = new Date().getFullYear() + 10;
@@ -141,25 +181,59 @@ export const createGame = async (req, res) => {
 
 export const updateGame = async (req, res) => {
   try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    if (!isValidObjectId(req.params.id)) {
       return res.status(400).json({ message: 'El identificador del videojuego no es válido' });
     }
 
     const { title, description, releaseDate, developerName, genreName, steamUrl, imageUrl } = req.body;
 
-    if (title !== undefined && (typeof title !== 'string' || !title.trim())) {
-      return res.status(400).json({ message: 'El título debe ser texto y no puede estar vacío' });
+    if (title !== undefined) {
+      if (typeof title !== 'string' || !title.trim()) {
+        return res.status(400).json({ message: 'El título debe ser texto y no puede estar vacío' });
+      }
+      if (title.trim().length > 150) {
+        return res.status(400).json({ message: 'El título del videojuego no puede superar los 150 caracteres' });
+      }
     }
-    if (description !== undefined && (typeof description !== 'string' || !description.trim())) {
-      return res.status(400).json({ message: 'La descripción debe ser texto y no puede estar vacía' });
+    if (description !== undefined) {
+      if (typeof description !== 'string' || !description.trim()) {
+        return res.status(400).json({ message: 'La descripción debe ser texto y no puede estar vacía' });
+      }
+      if (description.trim().length > 3000) {
+        return res.status(400).json({ message: 'La descripción no puede superar los 3000 caracteres' });
+      }
+    }
+    if (genreName !== undefined) {
+      if (typeof genreName !== 'string' || !genreName.trim()) {
+        return res.status(400).json({ message: 'El género debe ser texto y no puede estar vacío' });
+      }
+      if (genreName.trim().length > 60) {
+        return res.status(400).json({ message: 'El nombre del género no puede superar los 60 caracteres' });
+      }
+    }
+    if (developerName !== undefined) {
+      if (typeof developerName !== 'string' || !developerName.trim()) {
+        return res.status(400).json({ message: 'La desarrolladora debe ser texto y no puede estar vacía' });
+      }
+      if (developerName.trim().length > 80) {
+        return res.status(400).json({ message: 'El nombre de la empresa no puede superar los 80 caracteres' });
+      }
     }
     if (imageUrl !== undefined && (typeof imageUrl !== 'string' || !imageUrl.trim() || !imageUrl.trim().match(/^https?:\/\/.+/i))) {
       return res.status(400).json({ message: 'La URL de la imagen debe comenzar con http:// o https://' });
     }
-    if (steamUrl !== undefined && typeof steamUrl === 'string' && steamUrl.trim() && !steamUrl.trim().match(/^https?:\/\/.+/i)) {
-      return res.status(400).json({ message: 'El enlace de Steam debe comenzar con http:// o https://' });
+    if (steamUrl !== undefined && steamUrl !== null) {
+      if (typeof steamUrl !== 'string') {
+        return res.status(400).json({ message: 'El enlace de Steam debe ser texto' });
+      }
+      if (steamUrl.trim() && !steamUrl.trim().match(/^https?:\/\/.+/i)) {
+        return res.status(400).json({ message: 'El enlace de Steam debe comenzar con http:// o https://' });
+      }
     }
-    if (releaseDate !== undefined && releaseDate) {
+    if (releaseDate !== undefined && releaseDate !== null && releaseDate !== '') {
+      if (typeof releaseDate !== 'string') {
+        return res.status(400).json({ message: 'La fecha de lanzamiento debe ser una cadena de fecha válida' });
+      }
       const parsedDate = new Date(releaseDate);
       const year = parsedDate.getUTCFullYear();
       const maxYear = new Date().getFullYear() + 10;
@@ -191,10 +265,10 @@ export const updateGame = async (req, res) => {
       if (steamUrl !== undefined) game.steamUrl = steamUrl ? steamUrl.trim() : '';
       if (imageUrl !== undefined) game.imageUrl = imageUrl ? imageUrl.trim() : '';
 
-      if (genreName && genreName.trim()) {
+      if (typeof genreName === 'string' && genreName.trim()) {
         game.genre = await findOrCreate(Genre, genreName);
       }
-      if (developerName && developerName.trim()) {
+      if (typeof developerName === 'string' && developerName.trim()) {
         game.developer = await findOrCreate(Company, developerName);
       }
 
@@ -210,7 +284,7 @@ export const updateGame = async (req, res) => {
 
 export const deleteGame = async (req, res) => {
   try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    if (!isValidObjectId(req.params.id)) {
       return res.status(400).json({ message: 'El identificador del videojuego no es válido' });
     }
 

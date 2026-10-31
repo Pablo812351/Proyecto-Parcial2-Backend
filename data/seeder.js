@@ -1,6 +1,5 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
-import bcrypt from 'bcrypt';
 import User from '../src/models/User.js';
 import Game from '../src/models/Game.js';
 import Genre from '../src/models/Genre.js';
@@ -22,16 +21,7 @@ const seedData = async () => {
     await Company.deleteMany();
     await UserGame.deleteMany();
 
-    // Crear Usuario Admin y Usuario Normal
-    const salt = await bcrypt.genSalt(10);
-    const adminPassword = await bcrypt.hash('admin123', salt);
-    const userPassword = await bcrypt.hash('user123', salt);
-
-    // Mongoose saltará el hook 'pre-save' si usamos insertMany o create, 
-    // pero nuestro User.js tiene un pre('save') hook. 
-    // Para que no haga doble-hash, como ya solucionamos el bug de 'isModified', podemos pasar la contraseña cruda,
-    // PERO insertMany no dispara middleware pre('save').
-    // Así que mejor usamos User.create y le pasamos el password crudo, ya que el modelo se encarga de hashear.
+    // Crear Usuario Admin y Usuario Normal (el hook pre('save') del modelo User hashea las contraseñas con Bcrypt)
     const users = await User.create([
       { username: 'admin', email: 'admin@admin.com', password: 'admin123', role: 'ADMIN_ROLE' },
       { username: 'usuario', email: 'user@user.com', password: 'user123', role: 'USER_ROLE' }
@@ -107,7 +97,11 @@ const seedData = async () => {
         isFavorite: true
       }
     ]);
-    console.log('Biblioteca personal sembrada.');
+
+    // Sincronizar lista de favoritos en el documento del usuario de prueba
+    users[1].favorites = [games[0]._id, games[2]._id];
+    await users[1].save();
+    console.log('Biblioteca personal y favoritos sembrados.');
 
     console.log('--- SEEDING COMPLETADO CON ÉXITO ---');
     process.exit();

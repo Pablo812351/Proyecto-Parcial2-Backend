@@ -90,7 +90,7 @@ npm run seed
 ### 👤 Usuarios Precargados para Pruebas:
 | Rol | Email | Contraseña | Permisos |
 | :--- | :--- | :--- | :--- |
-| **Administrador** (`ADMIN_ROLE`) | `admin@admin.com` | `admin123` | CRUD completo de juegos, creación de géneros y empresas, gestión de biblioteca. |
+| **Administrador** (`ADMIN_ROLE`) | `admin@admin.com` | `admin123` | CRUD completo de juegos, creación de géneros y empresas, gestión de usuarios/roles y biblioteca. |
 | **Usuario Final** (`USER_ROLE`) | `user@user.com` | `user123` | Consulta de catálogo, gestión de su biblioteca personal y favoritos. |
 
 ---
@@ -145,9 +145,9 @@ El sistema implementa **5 colecciones orientadas a documentos** interconectadas 
 ### 1. Colección `users` (Usuarios)
 Representa a los usuarios registrados en el sistema, sus credenciales y su rol de acceso.
 - **`_id`**: `ObjectId` - Identificador único generado por MongoDB.
-- **`username`**: `String` - Nombre de usuario. **Reglas**: Requerido (`required: true`), único (`unique: true`), sin espacios en blanco redundantes.
-- **`email`**: `String` - Correo electrónico del usuario. **Reglas**: Requerido, único, validado mediante expresión regular RFC 5322 (`/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/`).
-- **`password`**: `String` - Contraseña del usuario. **Reglas**: Requerida. Se almacena hasheada con algoritmo **Bcrypt** (cost factor 10) mediante un hook `pre('save')`.
+- **`username`**: `String` - Nombre de usuario. **Reglas**: Requerido (`required: true`), único (`unique: true`), entre 3 y 30 caracteres, sin espacios redundantes (`trim: true`).
+- **`email`**: `String` - Correo electrónico del usuario. **Reglas**: Requerido, único, en minúsculas (`lowercase: true`), máximo 254 caracteres, validado mediante expresión regular segura en tiempo lineal (`/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}$/`).
+- **`password`**: `String` - Contraseña del usuario. **Reglas**: Requerida (entre 6 y 72 caracteres). Se almacena hasheada con algoritmo **Bcrypt** (cost factor 10) mediante un hook asíncrono `pre('save')`.
 - **`role`**: `String` - Nivel de acceso y privilegios. **Reglas**: Tipo Enum: `['USER_ROLE', 'ADMIN_ROLE']`. Valor por defecto: `'USER_ROLE'`.
 - **`favorites`**: `[ObjectId]` - Lista de referencias a documentos de la colección `games`.
 - **`createdAt` / `updatedAt`**: `Date` - Marcas de tiempo automáticas (`timestamps: true`).
@@ -155,13 +155,13 @@ Representa a los usuarios registrados en el sistema, sus credenciales y su rol d
 ### 2. Colección `games` (Videojuegos - Entidad CRUD Principal)
 Representa el catálogo de videojuegos disponible en la plataforma.
 - **`_id`**: `ObjectId` - Identificador único generado por MongoDB.
-- **`title`**: `String` - Título del videojuego. **Reglas**: Requerido (`required: true`), no vacío.
-- **`description`**: `String` - Sinopsis o reseña explicativa del juego.
-- **`releaseDate`**: `Date` - Fecha de lanzamiento original. **Reglas**: Debe ser una fecha válida.
+- **`title`**: `String` - Título del videojuego. **Reglas**: Requerido (`required: true`), único (`unique: true`), no vacío, máximo 150 caracteres.
+- **`description`**: `String` - Sinopsis o reseña explicativa del juego (máximo 3000 caracteres).
+- **`releaseDate`**: `Date` - Fecha de lanzamiento original. **Reglas**: Debe ser una fecha válida comprendida entre 1950 y el año actual + 10.
 - **`developer`**: `ObjectId` - Referencia (`ref: 'Company'`) al documento de la desarrolladora en la colección `companies`.
 - **`genre`**: `ObjectId` - Referencia (`ref: 'Genre'`) al documento del género en la colección `genres`.
-- **`steamUrl`**: `String` - Enlace externo oficial a la tienda de Steam.
-- **`imageUrl`**: `String` - URL pública de la imagen de portada/banner del juego.
+- **`steamUrl`**: `String` - Enlace externo opcional a la tienda de Steam (si se incluye, debe iniciar con `http://` o `https://`).
+- **`imageUrl`**: `String` - URL pública obligatoria de la imagen de portada/banner del juego (debe iniciar con `http://` o `https://`).
 - **`createdAt` / `updatedAt`**: `Date` - Marcas de tiempo automáticas.
 
 ### 3. Colección `usergames` (Biblioteca Personal de Videojuegos)
@@ -213,7 +213,7 @@ La API implementa un modelo de Control de Acceso Basado en Roles (RBAC):
 
 ## 🔑 Autenticación y Manejo de Sesión (JWT)
 
-1. **Generación de Token**: Al autenticarse exitosamente mediante `POST /api/auth/login` o registrarse con `POST /api/auth/register`, el servidor firma un token JWT utilizando el secreto `JWT_SECRET` y una validez de 30 días. El payload incluye el `id` y el `role` del usuario.
+1. **Generación de Token**: Al autenticarse exitosamente mediante `POST /api/auth/login` o registrarse con `POST /api/auth/register`, el servidor firma un token JWT utilizando el secreto `JWT_SECRET` y una validez de 30 días. El payload almacena únicamente el `id` del usuario para consultar su estado y rol actualizados en base de datos en cada petición protegida (garantizando que una revocación de permisos o eliminación de cuenta tenga efecto inmediato).
 2. **Envío del Token**: Las solicitudes a endpoints protegidos deben adjuntar el token en la cabecera HTTP:
    ```http
    Authorization: Bearer <TOKEN_JWT_AQUI>
@@ -315,13 +315,30 @@ La API implementa un modelo de Control de Acceso Basado en Roles (RBAC):
 
 ---
 
+#### `POST /api/auth/favorites/:gameId`
+- **Descripción**: Alterna el estado de favorito de un videojuego para el usuario autenticado, sincronizando tanto el arreglo `favorites` del modelo `User` como la colección `UserGame`.
+- **Acceso**: Privado (Requiere Bearer Token).
+- **Parámetros de Ruta**: `:gameId` (ObjectId hexadecimal de 24 caracteres del videojuego).
+- **Respuesta Exitosa (200 OK)**:
+  ```json
+  {
+    "favorites": ["671ad345c4e5f67890123457"]
+  }
+  ```
+- **Errores Posibles**:
+  - `400 Bad Request`: Identificador de videojuego inválido.
+  - `401 Unauthorized`: Token no provisto o inválido.
+  - `404 Not Found`: Videojuego o usuario no encontrado.
+
+---
+
 ### 🎮 2. Módulo de Videojuegos (`/api/games`)
 
 #### `GET /api/games`
 - **Descripción**: Retorna el catálogo completo de juegos con soporte de filtros opcionales.
 - **Acceso**: Público.
 - **Query Parameters**:
-  - `search` *(opcional)*: Filtra por coincidencia parcial insensible a mayúsculas en el título.
+  - `search` *(opcional)*: Filtra por coincidencia parcial insensible a mayúsculas en el título, nombre del género o nombre de la desarrolladora.
   - `genre` *(opcional)*: Filtra por el `_id` de la categoría.
   - `developer` *(opcional)*: Filtra por el `_id` de la empresa desarrolladora.
 - **Ejemplo**: `GET /api/games?search=witcher`
@@ -440,6 +457,9 @@ La API implementa un modelo de Control de Acceso Basado en Roles (RBAC):
 - **Descripción**: Retorna todos los juegos registrados en la biblioteca del usuario autenticado (con su estado y favoritos).
 - **Acceso**: Privado (Cualquier usuario autenticado).
 - **Headers**: `Authorization: Bearer <token>`
+- **Query Parameters**:
+  - `status` *(opcional)*: Filtra por estado (`Pendiente`, `Jugando`, `Completado`, `Abandonado`).
+  - `favorite` *(opcional)*: Si es `'true'`, retorna únicamente los juegos marcados como favoritos.
 - **Respuesta Exitosa (200 OK)**:
   ```json
   [
@@ -460,22 +480,26 @@ La API implementa un modelo de Control de Acceso Basado en Roles (RBAC):
 ---
 
 #### `GET /api/library/check/:gameId`
-- **Descripción**: Verifica el estado actual y condición de favorito de un juego para el usuario autenticado.
+- **Descripción**: Verifica si un videojuego específico se encuentra en la biblioteca del usuario autenticado y devuelve su documento asociado.
 - **Acceso**: Privado.
 - **Headers**: `Authorization: Bearer <token>`
+- **Parámetros de Ruta**: `:gameId` (ObjectId del videojuego).
 - **Respuesta Exitosa (200 OK)**:
   ```json
   {
     "inLibrary": true,
-    "status": "Completado",
-    "isFavorite": false
+    "item": {
+      "_id": "671ad550c4e5f67890123500",
+      "status": "Completado",
+      "isFavorite": false
+    }
   }
   ```
 
 ---
 
 #### `POST /api/library`
-- **Descripción**: Agrega un juego a la biblioteca o actualiza su estado. Si no se indica `status` ni `isFavorite`, se elimina de la biblioteca.
+- **Descripción**: Agrega un juego a la biblioteca o actualiza su estado/favorito. Si el registro resultante queda sin estado (`null`) y sin ser favorito (`false`), se limpia automáticamente de la biblioteca.
 - **Acceso**: Privado.
 - **Request Body**:
   ```json
@@ -485,32 +509,44 @@ La API implementa un modelo de Control de Acceso Basado en Roles (RBAC):
     "isFavorite": true
   }
   ```
-- **Respuesta Exitosa (200 OK)**:
+- **Respuesta Exitosa (200 OK)**: Objeto `UserGame` creado/actualizado con `game` poblado.
+- **Errores Posibles**:
+  - `400 Bad Request`: `gameId` inválido o `status` fuera de los valores permitidos.
+  - `404 Not Found`: Videojuego no encontrado.
+
+---
+
+#### `PUT /api/library/:gameId`
+- **Descripción**: Actualiza el estado de progreso o condición de favorito de un videojuego dentro de la biblioteca del usuario autenticado. Si queda sin estado y sin ser favorito, se limpia el registro huérfano.
+- **Acceso**: Privado.
+- **Parámetros de Ruta**: `:gameId` (ObjectId del videojuego).
+- **Request Body**:
   ```json
   {
-    "_id": "671ad550c4e5f67890123500",
-    "user": "671ad2b3c4e5f67890123456",
-    "game": "671ad345c4e5f67890123457",
-    "status": "Jugando",
+    "status": "Completado",
     "isFavorite": true
   }
   ```
+- **Respuesta Exitosa (200 OK)**: Objeto `UserGame` actualizado con `game` poblado.
 - **Errores Posibles**:
-  - `400 Bad Request`: `gameId` no proporcionado.
-    ```json
-    { "message": "ID de juego requerido" }
-    ```
+  - `400 Bad Request`: Identificador inválido o estado no permitido.
+  - `404 Not Found`: Videojuego no encontrado.
 
 ---
 
 #### `POST /api/library/toggle-favorite/:gameId`
 - **Descripción**: Alterna directamente el estado de favorito de un videojuego en la biblioteca del usuario sin forzar la selección de un estado de juego.
 - **Acceso**: Privado.
+- **Parámetros de Ruta**: `:gameId` (ObjectId del videojuego).
 - **Respuesta Exitosa (200 OK)**:
   ```json
   {
-    "message": "Favorito actualizado correctamente",
-    "isFavorite": true
+    "isFavorite": true,
+    "item": {
+      "_id": "671ad550c4e5f67890123500",
+      "status": null,
+      "isFavorite": true
+    }
   }
   ```
 

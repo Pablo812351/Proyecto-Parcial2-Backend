@@ -1,120 +1,56 @@
 import UserGame from '../models/UserGame.js';
 import Game from '../models/Game.js';
 import User from '../models/User.js';
-import { handleControllerError, isValidObjectId } from '../utils/errorHandler.js';
+import { handleControllerError, ensure } from '../utils/errorHandler.js';
+import { VALID_STATUSES, ensureValidId, validateLibraryInput } from '../utils/validators.js';
 
-// Estados válidos
-const VALID_STATUSES = ['Pendiente', 'Jugando', 'Completado', 'Abandonado'];
-
-// @desc Obtener la biblioteca del usuario actual (opcionalmente filtrada por estado o favoritos)
-// @route GET /api/library
-// @access Private
-export const getUserLibrary = async (req, res) => {
-  try {
-    const { status, favorite } = req.query;
-    const query = { user: req.user._id };
-
-    if (status && VALID_STATUSES.includes(status)) {
-      query.status = status;
-    }
-
-    if (favorite === 'true') {
-      query.isFavorite = true;
-    }
-
-    const items = await UserGame.find(query)
-      .populate({
-        path: 'game',
-        populate: [
-          { path: 'genre', select: 'name' },
-          { path: 'developer', select: 'name' }
-        ]
-      })
-      .sort({ updatedAt: -1 });
-
-    // Filtrar posibles entradas cuyo juego haya sido borrado
-    const validItems = items.filter(item => item.game != null);
-
-    res.json(validItems);
-  } catch (error) {
-    handleControllerError(res, error, 'Error al obtener la biblioteca del usuario');
-  }
+// Configuración reutilizable de populate para evitar repetición
+const GAME_POPULATE = {
+  path: 'game',
+  populate: [
+    { path: 'genre', select: 'name' },
+    { path: 'developer', select: 'name' }
+  ]
 };
 
-// @desc Obtener el estado de un juego específico en la biblioteca del usuario
-// @route GET /api/library/check/:gameId
-// @access Private
-export const getGameLibraryStatus = async (req, res) => {
-  try {
-    const { gameId } = req.params;
+// Sincroniza en una sola operación de MongoDB el array de favoritos del modelo User
+const syncUserFavorite = (userId, gameId, isFavorite) =>
+  User.findByIdAndUpdate(
+    userId,
+    isFavorite ? { $addToSet: { favorites: gameId } } : { $pull: { favorites: gameId } }
+  );
 
-    if (!isValidObjectId(gameId)) {
-      return res.status(400).json({ message: 'El identificador del videojuego no es válido' });
-    }
-
-    const item = await UserGame.findOne({ user: req.user._id, game: gameId })
-      .populate({
-        path: 'game',
-        populate: [
-          { path: 'genre', select: 'name' },
-          { path: 'developer', select: 'name' }
-        ]
-      });
-
-    if (!item) {
-      return res.json({ inLibrary: false, item: null });
-    }
-
-    res.json({ inLibrary: true, item });
-  } catch (error) {
-    handleControllerError(res, error, 'Error al consultar el estado del juego en la biblioteca');
-  }
+// Elimina una entrada huérfana de la biblioteca y quita el favorito del usuario
+const clearOrphanLibraryItem = async (userId, gameId, existingItem) => {
+  await Promise.all([
+    existingItem ? UserGame.deleteOne({ _id: existingItem._id }) : Promise.resolve(),
+    syncUserFavorite(userId, gameId, false)
+  ]);
 };
 
-// @desc Agregar o actualizar un juego en la biblioteca personal
-// @route POST /api/library
-// @access Private
-export const addOrUpdateLibraryItem = async (req, res) => {
+// Lógica compartida para agregar o actualizar un elemento en la biblioteca (POST y PUT)
+const saveLibraryItem = async (req, res, gameId, invalidIdMessage, fallbackError) => {
   try {
-    const { gameId, status, isFavorite } = req.body;
+    validateLibraryInput(gameId, req.body, invalidIdMessage);
 
-    if (!isValidObjectId(gameId)) {
-      return res.status(400).json({ message: 'El identificador del videojuego es inválido o no fue provisto' });
-    }
+    const { status, isFavorite } = req.body;
+    const [game, existingItem] = await Promise.all([
+      Game.findById(gameId),
+      UserGame.findOne({ user: req.user._id, game: gameId })
+    ]);
 
-    if (isFavorite !== undefined && typeof isFavorite !== 'boolean') {
-      return res.status(400).json({ message: 'El campo isFavorite debe ser un valor booleano' });
-    }
-
-    if (status !== undefined && status !== null && status !== '') {
-      if (typeof status !== 'string' || !VALID_STATUSES.includes(status)) {
-        return res.status(400).json({ 
-          message: `Estado de juego inválido. Debe ser uno de: ${VALID_STATUSES.join(', ')}` 
-        });
-      }
-    }
-
-    const game = await Game.findById(gameId);
-    if (!game) {
-      return res.status(404).json({ message: 'Videojuego no encontrado' });
-    }
-
-    let item = await UserGame.findOne({ user: req.user._id, game: gameId });
+    ensure(game, 'Videojuego no encontrado', 404);
 
     const nextStatus = status !== undefined
-      ? ((status && VALID_STATUSES.includes(status)) ? status : null)
-      : (item ? item.status : null);
+      ? (status && VALID_STATUSES.includes(status) ? status : null)
+      : (existingItem?.status ?? null);
 
     const nextFavorite = typeof isFavorite === 'boolean'
       ? isFavorite
-      : (item ? item.isFavorite : false);
+      : (existingItem?.isFavorite ?? false);
 
-    // Si el elemento queda sin estado y sin ser favorito, limpiarlo para evitar registros huérfanos
     if (!nextStatus && !nextFavorite) {
-      if (item) {
-        await UserGame.deleteOne({ _id: item._id });
-      }
-      await User.findByIdAndUpdate(req.user._id, { $pull: { favorites: gameId } });
+      await clearOrphanLibraryItem(req.user._id, gameId, existingItem);
       return res.status(200).json({
         removed: true,
         inLibrary: false,
@@ -125,141 +61,80 @@ export const addOrUpdateLibraryItem = async (req, res) => {
       });
     }
 
-    if (item) {
-      item.status = nextStatus;
-      item.isFavorite = nextFavorite;
-      await item.save();
-    } else {
-      item = await UserGame.create({
-        user: req.user._id,
-        game: gameId,
-        status: nextStatus,
-        isFavorite: nextFavorite
-      });
-    }
-
-    // Sincronizar con el array de favoritos del modelo User
-    const user = await User.findById(req.user._id);
-    if (user) {
-      const hasFav = user.favorites.some(id => id.toString() === gameId);
-      if (nextFavorite && !hasFav) {
-        user.favorites.push(gameId);
-        await user.save();
-      } else if (!nextFavorite && hasFav) {
-        user.favorites = user.favorites.filter(id => id.toString() !== gameId);
-        await user.save();
-      }
-    }
-
-    await item.populate({
-      path: 'game',
-      populate: [
-        { path: 'genre', select: 'name' },
-        { path: 'developer', select: 'name' }
-      ]
-    });
+    const [item] = await Promise.all([
+      UserGame.findOneAndUpdate(
+        { user: req.user._id, game: gameId },
+        { status: nextStatus, isFavorite: nextFavorite },
+        { upsert: true, new: true, runValidators: true }
+      ).populate(GAME_POPULATE),
+      syncUserFavorite(req.user._id, gameId, nextFavorite)
+    ]);
 
     res.status(200).json(item);
   } catch (error) {
-    handleControllerError(res, error, 'Error al agregar el videojuego a la biblioteca');
+    handleControllerError(res, error, fallbackError);
   }
 };
+
+// @desc Obtener la biblioteca del usuario actual (opcionalmente filtrada por estado o favoritos)
+// @route GET /api/library
+// @access Private
+export const getUserLibrary = async (req, res) => {
+  try {
+    const { status, favorite } = req.query;
+    const query = {
+      user: req.user._id,
+      ...(status && VALID_STATUSES.includes(status) ? { status } : {}),
+      ...(favorite === 'true' ? { isFavorite: true } : {})
+    };
+
+    const items = await UserGame.find(query)
+      .populate(GAME_POPULATE)
+      .sort({ updatedAt: -1 });
+
+    res.json(items.filter((item) => item.game != null));
+  } catch (error) {
+    handleControllerError(res, error, 'Error al obtener la biblioteca del usuario');
+  }
+};
+
+// @desc Obtener el estado de un juego específico en la biblioteca del usuario
+// @route GET /api/library/check/:gameId
+// @access Private
+export const getGameLibraryStatus = async (req, res) => {
+  try {
+    ensureValidId(req.params.gameId);
+
+    const item = await UserGame.findOne({ user: req.user._id, game: req.params.gameId }).populate(GAME_POPULATE);
+    res.json({ inLibrary: Boolean(item), item: item || null });
+  } catch (error) {
+    handleControllerError(res, error, 'Error al consultar el estado del juego en la biblioteca');
+  }
+};
+
+// @desc Agregar o actualizar un juego en la biblioteca personal
+// @route POST /api/library
+// @access Private
+export const addOrUpdateLibraryItem = (req, res) =>
+  saveLibraryItem(
+    req,
+    res,
+    req.body.gameId,
+    'El identificador del videojuego es inválido o no fue provisto',
+    'Error al agregar el videojuego a la biblioteca'
+  );
 
 // @desc Modificar estado o favorito de un juego existente en la biblioteca
 // @route PUT /api/library/:gameId
 // @access Private
-export const updateLibraryItem = async (req, res) => {
-  try {
-    const { gameId } = req.params;
-    const { status, isFavorite } = req.body;
-
-    if (!isValidObjectId(gameId)) {
-      return res.status(400).json({ message: 'El identificador del videojuego no es válido' });
-    }
-
-    if (isFavorite !== undefined && typeof isFavorite !== 'boolean') {
-      return res.status(400).json({ message: 'El campo isFavorite debe ser un valor booleano' });
-    }
-
-    if (status !== undefined && status !== null && status !== '') {
-      if (typeof status !== 'string' || !VALID_STATUSES.includes(status)) {
-        return res.status(400).json({ 
-          message: `Estado de juego inválido. Debe ser uno de: ${VALID_STATUSES.join(', ')}` 
-        });
-      }
-    }
-
-    const game = await Game.findById(gameId);
-    if (!game) {
-      return res.status(404).json({ message: 'Videojuego no encontrado' });
-    }
-
-    let item = await UserGame.findOne({ user: req.user._id, game: gameId });
-
-    const nextStatus = status !== undefined
-      ? ((status && VALID_STATUSES.includes(status)) ? status : null)
-      : (item ? item.status : null);
-
-    const nextFavorite = typeof isFavorite === 'boolean'
-      ? isFavorite
-      : (item ? item.isFavorite : false);
-
-    // Si queda sin estado y sin ser favorito, limpiar documento huérfano
-    if (!nextStatus && !nextFavorite) {
-      if (item) {
-        await UserGame.deleteOne({ _id: item._id });
-      }
-      await User.findByIdAndUpdate(req.user._id, { $pull: { favorites: gameId } });
-      return res.json({
-        removed: true,
-        inLibrary: false,
-        item: null,
-        status: null,
-        isFavorite: false,
-        message: 'Videojuego removido de tu biblioteca'
-      });
-    }
-
-    if (!item) {
-      item = new UserGame({
-        user: req.user._id,
-        game: gameId,
-        status: nextStatus,
-        isFavorite: nextFavorite
-      });
-    } else {
-      item.status = nextStatus;
-      item.isFavorite = nextFavorite;
-    }
-
-    await item.save();
-
-    // Sincronizar con el array de favoritos de User
-    const user = await User.findById(req.user._id);
-    if (user) {
-      const hasFav = user.favorites.some(id => id.toString() === gameId);
-      if (nextFavorite && !hasFav) {
-        user.favorites.push(gameId);
-        await user.save();
-      } else if (!nextFavorite && hasFav) {
-        user.favorites = user.favorites.filter(id => id.toString() !== gameId);
-        await user.save();
-      }
-    }
-
-    await item.populate({
-      path: 'game',
-      populate: [
-        { path: 'genre', select: 'name' },
-        { path: 'developer', select: 'name' }
-      ]
-    });
-
-    res.json(item);
-  } catch (error) {
-    handleControllerError(res, error, 'Error al actualizar el videojuego en la biblioteca');
-  }
-};
+export const updateLibraryItem = (req, res) =>
+  saveLibraryItem(
+    req,
+    res,
+    req.params.gameId,
+    'El identificador del videojuego no es válido',
+    'Error al actualizar el videojuego en la biblioteca'
+  );
 
 // @desc Quitar un juego de la biblioteca personal
 // @route DELETE /api/library/:gameId
@@ -267,22 +142,14 @@ export const updateLibraryItem = async (req, res) => {
 export const removeFromLibrary = async (req, res) => {
   try {
     const { gameId } = req.params;
+    ensureValidId(gameId);
 
-    if (!isValidObjectId(gameId)) {
-      return res.status(400).json({ message: 'El identificador del videojuego no es válido' });
-    }
+    const [deleted] = await Promise.all([
+      UserGame.findOneAndDelete({ user: req.user._id, game: gameId }),
+      syncUserFavorite(req.user._id, gameId, false)
+    ]);
 
-    const deleted = await UserGame.findOneAndDelete({ user: req.user._id, game: gameId });
-
-    // Sincronizar: eliminar también de los favoritos del usuario
-    await User.findByIdAndUpdate(req.user._id, {
-      $pull: { favorites: gameId }
-    });
-
-    if (!deleted) {
-      return res.status(404).json({ message: 'El videojuego no se encuentra en tu biblioteca' });
-    }
-
+    ensure(deleted, 'El videojuego no se encuentra en tu biblioteca', 404);
     res.json({ message: 'Videojuego eliminado de tu biblioteca', gameId });
   } catch (error) {
     handleControllerError(res, error, 'Error al eliminar el videojuego de la biblioteca');
@@ -295,63 +162,30 @@ export const removeFromLibrary = async (req, res) => {
 export const toggleLibraryFavorite = async (req, res) => {
   try {
     const { gameId } = req.params;
+    ensureValidId(gameId);
 
-    if (!isValidObjectId(gameId)) {
-      return res.status(400).json({ message: 'El identificador del videojuego no es válido' });
+    const [game, existingItem] = await Promise.all([
+      Game.findById(gameId),
+      UserGame.findOne({ user: req.user._id, game: gameId })
+    ]);
+
+    ensure(game, 'Videojuego no encontrado', 404);
+
+    const nextFavorite = existingItem ? !existingItem.isFavorite : true;
+
+    if (!nextFavorite && !existingItem?.status) {
+      await clearOrphanLibraryItem(req.user._id, gameId, existingItem);
+      return res.json({ isFavorite: false, item: null, inLibrary: false });
     }
 
-    const game = await Game.findById(gameId);
-    if (!game) {
-      return res.status(404).json({ message: 'Videojuego no encontrado' });
-    }
-
-    let item = await UserGame.findOne({ user: req.user._id, game: gameId });
-
-    if (!item) {
-      // Si no estaba en biblioteca, se agrega SOLO como favorito sin obligar ningún estado
-      item = await UserGame.create({
-        user: req.user._id,
-        game: gameId,
-        status: null,
-        isFavorite: true
-      });
-    } else {
-      item.isFavorite = !item.isFavorite;
-
-      // Si se desmarcó de favorito y no tiene ningún estado de juego, limpiamos el documento
-      if (!item.isFavorite && !item.status) {
-        await UserGame.deleteOne({ _id: item._id });
-        const user = await User.findById(req.user._id);
-        if (user) {
-          user.favorites = user.favorites.filter(id => id.toString() !== gameId);
-          await user.save();
-        }
-        return res.json({ isFavorite: false, item: null, inLibrary: false });
-      }
-
-      await item.save();
-    }
-
-    // Sincronizar con User.favorites
-    const user = await User.findById(req.user._id);
-    if (user) {
-      const hasFav = user.favorites.some(id => id.toString() === gameId);
-      if (item.isFavorite && !hasFav) {
-        user.favorites.push(gameId);
-        await user.save();
-      } else if (!item.isFavorite && hasFav) {
-        user.favorites = user.favorites.filter(id => id.toString() !== gameId);
-        await user.save();
-      }
-    }
-
-    await item.populate({
-      path: 'game',
-      populate: [
-        { path: 'genre', select: 'name' },
-        { path: 'developer', select: 'name' }
-      ]
-    });
+    const [item] = await Promise.all([
+      UserGame.findOneAndUpdate(
+        { user: req.user._id, game: gameId },
+        { isFavorite: nextFavorite, $setOnInsert: { status: null } },
+        { upsert: true, new: true }
+      ).populate(GAME_POPULATE),
+      syncUserFavorite(req.user._id, gameId, nextFavorite)
+    ]);
 
     res.json({ isFavorite: item.isFavorite, item });
   } catch (error) {

@@ -2,7 +2,8 @@ import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 import Game from '../models/Game.js';
 import UserGame from '../models/UserGame.js';
-import { handleControllerError, escapeRegex, isValidObjectId, EMAIL_REGEX } from '../utils/errorHandler.js';
+import { handleControllerError, escapeRegex, ensure } from '../utils/errorHandler.js';
+import { validateRegisterInput, validateLoginInput, ensureValidId } from '../utils/validators.js';
 
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
@@ -11,106 +12,55 @@ const generateToken = (id) => {
 };
 
 export const register = async (req, res) => {
-  const { username, email, password } = req.body;
-  
   try {
-    // 1. Validar tipos de datos y campos requeridos
-    if (typeof username !== 'string' || typeof email !== 'string' || typeof password !== 'string') {
-      return res.status(400).json({ message: 'Todos los campos (usuario, email y contraseña) deben ser texto' });
-    }
+    validateRegisterInput(req.body);
 
-    if (!username.trim() || !email.trim() || !password) {
-      return res.status(400).json({ message: 'Todos los campos (usuario, email y contraseña) son obligatorios' });
-    }
+    const cleanUsername = req.body.username.trim();
+    const cleanEmail = req.body.email.trim().toLowerCase();
 
-    const cleanUsername = username.trim();
-    const cleanEmail = email.trim().toLowerCase();
+    const [existingEmail, existingUsername] = await Promise.all([
+      User.findOne({ email: cleanEmail }),
+      User.findOne({ username: { $regex: new RegExp(`^${escapeRegex(cleanUsername)}$`, 'i') } })
+    ]);
 
-    // 2. Validar longitud del nombre de usuario
-    if (cleanUsername.length < 3 || cleanUsername.length > 30) {
-      return res.status(400).json({ message: 'El nombre de usuario debe tener entre 3 y 30 caracteres' });
-    }
+    ensure(!existingEmail, 'El correo electrónico ya está registrado. Por favor utilice otro.', 400);
+    ensure(!existingUsername, 'El nombre de usuario ya está en uso. Por favor elija otro.', 400);
 
-    // 3. Validar formato y longitud de correo electrónico
-    if (cleanEmail.length > 254 || !EMAIL_REGEX.test(cleanEmail)) {
-      return res.status(400).json({ message: 'Por favor ingrese un correo electrónico válido' });
-    }
-
-    // 4. Validar longitud de contraseña (límite de 72 caracteres por algoritmo Bcrypt)
-    if (password.length < 6) {
-      return res.status(400).json({ message: 'La contraseña debe tener al menos 6 caracteres' });
-    }
-    if (password.length > 72) {
-      return res.status(400).json({ message: 'La contraseña no puede superar los 72 caracteres' });
-    }
-
-    // 5. Validar si el email ya existe
-    const existingEmail = await User.findOne({ email: cleanEmail });
-    if (existingEmail) {
-      return res.status(400).json({ message: 'El correo electrónico ya está registrado. Por favor utilice otro.' });
-    }
-
-    // 6. Validar si el username ya existe (case-insensitive)
-    const existingUsername = await User.findOne({ 
-      username: { $regex: new RegExp(`^${escapeRegex(cleanUsername)}$`, 'i') } 
-    });
-    if (existingUsername) {
-      return res.status(400).json({ message: 'El nombre de usuario ya está en uso. Por favor elija otro.' });
-    }
-
-    // 7. Crear el nuevo usuario
     const user = await User.create({
       username: cleanUsername,
       email: cleanEmail,
-      password
+      password: req.body.password
     });
 
-    if (user) {
-      res.status(201).json({
-        _id: user._id,
-        username: user.username,
-        email: user.email,
-        role: user.role,
-        token: generateToken(user._id)
-      });
-    } else {
-      res.status(400).json({ message: 'Los datos proporcionados no son válidos' });
-    }
+    res.status(201).json({
+      _id: user._id,
+      username: user.username,
+      email: user.email,
+      role: user.role,
+      token: generateToken(user._id)
+    });
   } catch (error) {
     handleControllerError(res, error, 'Error al registrar la cuenta de usuario');
   }
 };
 
 export const login = async (req, res) => {
-  const { email, password } = req.body;
-  
   try {
-    if (typeof email !== 'string' || typeof password !== 'string') {
-      return res.status(400).json({ message: 'El correo electrónico y la contraseña deben ser texto' });
-    }
+    validateLoginInput(req.body);
 
-    if (!email.trim() || !password) {
-      return res.status(400).json({ message: 'Por favor ingrese correo electrónico y contraseña' });
-    }
-
-    const cleanEmail = email.trim().toLowerCase();
-    if (cleanEmail.length > 254 || password.length > 128) {
-      return res.status(401).json({ message: 'Correo electrónico o contraseña inválidos' });
-    }
-
+    const cleanEmail = req.body.email.trim().toLowerCase();
     const user = await User.findOne({ email: cleanEmail });
+    const isValidCredentials = Boolean(user && (await user.matchPassword(req.body.password)));
 
-    if (user && (await user.matchPassword(password))) {
-      res.json({
-        _id: user._id,
-        username: user.username,
-        email: user.email,
-        role: user.role,
-        token: generateToken(user._id)
-      });
-    } else {
-      res.status(401).json({ message: 'Correo electrónico o contraseña inválidos' });
-    }
+    ensure(isValidCredentials, 'Correo electrónico o contraseña inválidos', 401);
+
+    res.json({
+      _id: user._id,
+      username: user.username,
+      email: user.email,
+      role: user.role,
+      token: generateToken(user._id)
+    });
   } catch (error) {
     handleControllerError(res, error, 'Error al iniciar sesión');
   }
@@ -119,11 +69,9 @@ export const login = async (req, res) => {
 export const getFavorites = async (req, res) => {
   try {
     const user = await User.findById(req.user._id).populate('favorites');
-    if (user) {
-      res.json(user.favorites);
-    } else {
-      res.status(404).json({ message: 'Usuario no encontrado' });
-    }
+    ensure(user, 'Usuario no encontrado', 404);
+
+    res.json(user.favorites);
   } catch (error) {
     handleControllerError(res, error, 'Error al obtener la lista de favoritos');
   }
@@ -131,45 +79,35 @@ export const getFavorites = async (req, res) => {
 
 export const toggleFavorite = async (req, res) => {
   try {
-    const gameId = req.params.gameId;
+    const { gameId } = req.params;
+    ensureValidId(gameId);
 
-    if (!isValidObjectId(gameId)) {
-      return res.status(400).json({ message: 'El identificador del videojuego no es válido' });
-    }
+    const [gameExists, user, userGame] = await Promise.all([
+      Game.findById(gameId),
+      User.findById(req.user._id),
+      UserGame.findOne({ user: req.user._id, game: gameId })
+    ]);
 
-    const gameExists = await Game.findById(gameId);
-    if (!gameExists) {
-      return res.status(404).json({ message: 'Videojuego no encontrado' });
-    }
+    ensure(gameExists, 'Videojuego no encontrado', 404);
+    ensure(user, 'Usuario no encontrado', 404);
 
-    const user = await User.findById(req.user._id);
-    if (!user) {
-      return res.status(404).json({ message: 'Usuario no encontrado' });
-    }
+    const isCurrentlyFavorite = user.favorites.some((id) => id.toString() === gameId);
+    const nextFavorite = !isCurrentlyFavorite;
 
-    const isFavorite = user.favorites.some(id => id.toString() === gameId);
-    
-    if (isFavorite) {
-      user.favorites = user.favorites.filter(id => id.toString() !== gameId);
-      const userGame = await UserGame.findOne({ user: req.user._id, game: gameId });
-      if (userGame) {
-        userGame.isFavorite = false;
-        if (!userGame.status) {
-          await UserGame.deleteOne({ _id: userGame._id });
-        } else {
-          await userGame.save();
-        }
-      }
-    } else {
-      user.favorites.push(gameId);
-      await UserGame.findOneAndUpdate(
-        { user: req.user._id, game: gameId },
-        { isFavorite: true, $setOnInsert: { status: null } },
-        { upsert: true, new: true }
-      );
-    }
-    
-    await user.save();
+    user.favorites = nextFavorite
+      ? [...user.favorites, gameId]
+      : user.favorites.filter((id) => id.toString() !== gameId);
+
+    const syncLibraryPromise = !nextFavorite && userGame && !userGame.status
+      ? UserGame.deleteOne({ _id: userGame._id })
+      : UserGame.findOneAndUpdate(
+          { user: req.user._id, game: gameId },
+          { isFavorite: nextFavorite, $setOnInsert: { status: null } },
+          { upsert: nextFavorite, new: true }
+        );
+
+    await Promise.all([user.save(), syncLibraryPromise]);
+
     res.json({ favorites: user.favorites });
   } catch (error) {
     handleControllerError(res, error, 'Error al actualizar el estado de favorito');

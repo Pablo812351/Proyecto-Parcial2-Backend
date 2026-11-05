@@ -1,5 +1,6 @@
 import Genre from '../models/Genre.js';
-import { handleControllerError, escapeRegex } from '../utils/errorHandler.js';
+import { handleControllerError, escapeRegex, ensure } from '../utils/errorHandler.js';
+import { validateGenreInput } from '../utils/validators.js';
 
 export const getGenres = async (req, res) => {
   try {
@@ -12,39 +13,21 @@ export const getGenres = async (req, res) => {
 
 export const createGenre = async (req, res) => {
   try {
-    const { name, description } = req.body;
+    validateGenreInput(req.body);
 
-    if (!name || typeof name !== 'string' || !name.trim()) {
-      return res.status(400).json({ message: 'El nombre del género es obligatorio y debe ser texto' });
-    }
+    const cleanName = req.body.name.trim();
+    const cleanDescription = req.body.description ? req.body.description.trim() : '';
 
-    if (description !== undefined && description !== null && typeof description !== 'string') {
-      return res.status(400).json({ message: 'La descripción del género debe ser texto' });
-    }
+    const genreExists = await Genre.findOne({
+      name: { $regex: new RegExp(`^${escapeRegex(cleanName)}$`, 'i') }
+    });
+    ensure(!genreExists, 'El género ya se encuentra registrado', 400);
 
-    const cleanName = name.trim();
-    if (cleanName.length > 60) {
-      return res.status(400).json({ message: 'El nombre del género no puede superar los 60 caracteres' });
-    }
-
-    const cleanDescription = description ? description.trim() : '';
-    if (cleanDescription.length > 500) {
-      return res.status(400).json({ message: 'La descripción no puede superar los 500 caracteres' });
-    }
-
-    const safeName = escapeRegex(cleanName);
-    const genreExists = await Genre.findOne({ name: { $regex: new RegExp(`^${safeName}$`, 'i') } });
-    
-    if (genreExists) {
-      return res.status(400).json({ message: 'El género ya se encuentra registrado' });
-    }
-
-    const genre = new Genre({
+    const createdGenre = await Genre.create({
       name: cleanName,
       description: cleanDescription
     });
 
-    const createdGenre = await genre.save();
     res.status(201).json(createdGenre);
   } catch (error) {
     handleControllerError(res, error, 'Error al crear el género');

@@ -1,6 +1,14 @@
 import User from '../models/User.js';
 import UserGame from '../models/UserGame.js';
-import { handleControllerError, isValidObjectId } from '../utils/errorHandler.js';
+import { handleControllerError, ensure } from '../utils/errorHandler.js';
+import { ensureValidId, validateRoleUpdateInput } from '../utils/validators.js';
+
+// Verifica si un usuario es el único administrador activo del sistema
+const isOnlyAdmin = async (user) => {
+  if (user.role !== 'ADMIN_ROLE') return false;
+  const adminCount = await User.countDocuments({ role: 'ADMIN_ROLE' });
+  return adminCount <= 1;
+};
 
 // @desc    Obtener lista de todos los usuarios
 // @route   GET /api/users
@@ -25,28 +33,13 @@ export const updateUserRole = async (req, res) => {
   const { role } = req.body;
 
   try {
-    if (!isValidObjectId(id)) {
-      return res.status(400).json({ message: 'El identificador de usuario no es válido' });
-    }
-
-    if (typeof role !== 'string' || !['ADMIN_ROLE', 'USER_ROLE'].includes(role)) {
-      return res.status(400).json({ message: 'El rol especificado no es válido' });
-    }
+    validateRoleUpdateInput(id, role);
 
     const targetUser = await User.findById(id);
-    if (!targetUser) {
-      return res.status(404).json({ message: 'Usuario no encontrado' });
-    }
+    ensure(targetUser, 'Usuario no encontrado', 404);
 
-    // Regla de seguridad: Si actualmente es ADMIN_ROLE y se le quiere quitar el admin (pasar a USER_ROLE)
-    if (targetUser.role === 'ADMIN_ROLE' && role === 'USER_ROLE') {
-      const adminCount = await User.countDocuments({ role: 'ADMIN_ROLE' });
-      if (adminCount <= 1) {
-        return res.status(400).json({
-          message: 'No es posible quitar el rol de administrador porque es el único administrador del sistema.'
-        });
-      }
-    }
+    const blockedDemotion = role === 'USER_ROLE' && (await isOnlyAdmin(targetUser));
+    ensure(!blockedDemotion, 'No es posible quitar el rol de administrador porque es el único administrador del sistema.', 400);
 
     targetUser.role = role;
     await targetUser.save();
@@ -70,30 +63,18 @@ export const deleteUser = async (req, res) => {
   const { id } = req.params;
 
   try {
-    if (!isValidObjectId(id)) {
-      return res.status(400).json({ message: 'El identificador de usuario no es válido' });
-    }
+    ensureValidId(id, 'El identificador de usuario no es válido');
 
     const targetUser = await User.findById(id);
-    if (!targetUser) {
-      return res.status(404).json({ message: 'Usuario no encontrado' });
-    }
+    ensure(targetUser, 'Usuario no encontrado', 404);
 
-    // Regla de seguridad: No se puede eliminar al único administrador del sistema
-    if (targetUser.role === 'ADMIN_ROLE') {
-      const adminCount = await User.countDocuments({ role: 'ADMIN_ROLE' });
-      if (adminCount <= 1) {
-        return res.status(400).json({
-          message: 'No es posible eliminar al único administrador del sistema.'
-        });
-      }
-    }
+    const blockedDeletion = await isOnlyAdmin(targetUser);
+    ensure(!blockedDeletion, 'No es posible eliminar al único administrador del sistema.', 400);
 
-    // Limpiar biblioteca personal del usuario a eliminar
-    await UserGame.deleteMany({ user: id });
-
-    // Eliminar usuario
-    await User.findByIdAndDelete(id);
+    await Promise.all([
+      UserGame.deleteMany({ user: id }),
+      User.findByIdAndDelete(id)
+    ]);
 
     res.json({ message: `Cuenta del usuario "${targetUser.username}" eliminada correctamente.` });
   } catch (error) {

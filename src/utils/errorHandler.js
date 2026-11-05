@@ -5,8 +5,7 @@
 
 // Escapa caracteres especiales para búsquedas seguras con RegExp
 export const escapeRegex = (string = '') => {
-  if (typeof string !== 'string') return '';
-  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return typeof string === 'string' ? string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : '';
 };
 
 // Valida estrictamente que un identificador sea un ObjectId hexadecimal de 24 caracteres
@@ -17,92 +16,88 @@ export const isValidObjectId = (id) => {
 // Expresión regular segura contra ReDoS (tiempo lineal) para validación de correos electrónicos
 export const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}$/;
 
+// Verifica una condición y si no se cumple lanza un error controlado con código HTTP y mensaje
+export const ensure = (condition, message, status = 400) => {
+  if (!condition) {
+    throw { isCustom: true, status, message };
+  }
+};
+
+const DUPLICATE_MESSAGES = {
+  username: 'El nombre de usuario ya está en uso. Por favor elija otro.',
+  email: 'El correo electrónico ya está registrado. Por favor utilice otro.',
+  title: 'Ya existe un videojuego registrado con ese título. Por favor elija otro.',
+  name: 'Ya existe un elemento registrado con ese nombre.'
+};
+
+const VALIDATION_KIND_MESSAGES = {
+  required: (path) => `El campo '${path}' es obligatorio`,
+  minlength: (path) => `El campo '${path}' no cumple con la longitud mínima requerida`,
+  enum: (path) => `El valor del campo '${path}' no es válido`
+};
+
+const ERROR_BY_NAME = {
+  CastError: { status: 400, message: 'El identificador proporcionado no es válido o el recurso no existe.' },
+  JsonWebTokenError: { status: 401, message: 'Token de autenticación inválido. Por favor inicie sesión nuevamente.' },
+  TokenExpiredError: { status: 401, message: 'Su sesión ha expirado. Por favor inicie sesión nuevamente.' }
+};
+
+const extractDuplicateField = (error) => {
+  const keySource = error.keyValue || error.keyPattern;
+  if (keySource && typeof keySource === 'object') {
+    return Object.keys(keySource)[0] || '';
+  }
+  const match = error.message?.match(/index:\s+([a-zA-Z0-9_]+)/);
+  return match?.[1] ? match[1].replace(/_1$/, '') : '';
+};
+
+const resolveDuplicateError = (error) => {
+  const field = extractDuplicateField(error);
+  const matchedKey = Object.keys(DUPLICATE_MESSAGES).find(
+    (key) => field === key || error.message?.includes(`${key}_1`)
+  );
+  const message = matchedKey
+    ? DUPLICATE_MESSAGES[matchedKey]
+    : field.includes('user') && field.includes('game')
+      ? 'El videojuego ya se encuentra registrado en tu biblioteca.'
+      : 'Ya existe un registro con esos datos en el sistema.';
+
+  return { status: 400, message };
+};
+
+const resolveValidationError = (error) => {
+  const errorList = Object.values(error.errors || {}).map((err) => {
+    const formatter = VALIDATION_KIND_MESSAGES[err.kind];
+    return formatter ? formatter(err.path) : err.message;
+  });
+
+  return {
+    status: 400,
+    message: errorList.join('. ') || 'Los datos proporcionados no cumplen con las reglas de validación.'
+  };
+};
+
 export const formatErrorMessage = (error, fallbackMessage = 'Ha ocurrido un error en el servidor. Por favor intente más tarde.') => {
   if (!error) {
     return { status: 500, message: fallbackMessage };
   }
 
-  // 1. Error de clave duplicada en MongoDB (E11000)
-  const isDuplicate = error.code === 11000 || (error.message && error.message.includes('E11000 duplicate key'));
-  if (isDuplicate) {
-    let field = '';
+  const isDuplicate = error.code === 11000 || error.message?.includes('E11000 duplicate key');
+  const isParseFailed = error.type === 'entity.parse.failed' || (error instanceof SyntaxError && 'body' in error);
+  const isTooLarge = error.type === 'entity.too.large' || error.status === 413;
 
-    if (error.keyValue && typeof error.keyValue === 'object') {
-      field = Object.keys(error.keyValue)[0] || '';
-    } else if (error.keyPattern && typeof error.keyPattern === 'object') {
-      field = Object.keys(error.keyPattern)[0] || '';
-    } else if (error.message) {
-      // Extraer nombre del índice de la cadena del error si keyValue no viene poblado
-      const match = error.message.match(/index:\s+([a-zA-Z0-9_]+)/);
-      if (match && match[1]) {
-        field = match[1].replace(/_1$/, '');
-      }
-    }
+  const errorResolvers = [
+    { match: Boolean(error.isCustom), resolve: () => ({ status: error.status || 400, message: error.message }) },
+    { match: Boolean(isDuplicate), resolve: () => resolveDuplicateError(error) },
+    { match: error.name === 'ValidationError', resolve: () => resolveValidationError(error) },
+    { match: Boolean(ERROR_BY_NAME[error.name]), resolve: () => ERROR_BY_NAME[error.name] },
+    { match: Boolean(isParseFailed), resolve: () => ({ status: 400, message: 'El formato de los datos enviados no es un JSON válido.' }) },
+    { match: Boolean(isTooLarge), resolve: () => ({ status: 413, message: 'El tamaño de los datos enviados excede el límite permitido.' }) }
+  ];
 
-    if (field === 'username' || (error.message && error.message.includes('username_1'))) {
-      return { status: 400, message: 'El nombre de usuario ya está en uso. Por favor elija otro.' };
-    }
-    if (field === 'email' || (error.message && error.message.includes('email_1'))) {
-      return { status: 400, message: 'El correo electrónico ya está registrado. Por favor utilice otro.' };
-    }
-    if (field === 'title' || (error.message && error.message.includes('title_1'))) {
-      return { status: 400, message: 'Ya existe un videojuego registrado con ese título. Por favor elija otro.' };
-    }
-    if (field === 'name' || (error.message && error.message.includes('name_1'))) {
-      return { status: 400, message: 'Ya existe un elemento registrado con ese nombre.' };
-    }
-    if (field.includes('user') && field.includes('game')) {
-      return { status: 400, message: 'El videojuego ya se encuentra registrado en tu biblioteca.' };
-    }
-    return { status: 400, message: 'Ya existe un registro con esos datos en el sistema.' };
-  }
-
-  // 2. Error de validación de esquema en Mongoose (ValidationError)
-  if (error.name === 'ValidationError') {
-    const errorList = Object.values(error.errors || {}).map(err => {
-      // Traducir mensajes estándar de Mongoose si no están en español
-      if (err.kind === 'required') {
-        return `El campo '${err.path}' es obligatorio`;
-      }
-      if (err.kind === 'minlength') {
-        return `El campo '${err.path}' no cumple con la longitud mínima requerida`;
-      }
-      if (err.kind === 'enum') {
-        return `El valor del campo '${err.path}' no es válido`;
-      }
-      return err.message;
-    });
-
-    return { 
-      status: 400, 
-      message: errorList.join('. ') || 'Los datos proporcionados no cumplen con las reglas de validación.' 
-    };
-  }
-
-  // 3. Error de tipo CastError (por ejemplo, ObjectId con formato incorrecto)
-  if (error.name === 'CastError') {
-    return { status: 400, message: 'El identificador proporcionado no es válido o el recurso no existe.' };
-  }
-
-  // 4. Errores de JWT (Token inválido o expirado)
-  if (error.name === 'JsonWebTokenError') {
-    return { status: 401, message: 'Token de autenticación inválido. Por favor inicie sesión nuevamente.' };
-  }
-  if (error.name === 'TokenExpiredError') {
-    return { status: 401, message: 'Su sesión ha expirado. Por favor inicie sesión nuevamente.' };
-  }
-
-  // 5. Error de parseo de JSON en body o tamaño excesivo de payload
-  if (error.type === 'entity.parse.failed' || (error instanceof SyntaxError && 'body' in error)) {
-    return { status: 400, message: 'El formato de los datos enviados no es un JSON válido.' };
-  }
-  if (error.type === 'entity.too.large' || error.status === 413) {
-    return { status: 413, message: 'El tamaño de los datos enviados excede el límite permitido.' };
-  }
-
-  // 6. Mensaje de error personalizado previo
-  if (error.isCustom) {
-    return { status: error.status || 400, message: error.message };
+  const matchedResolver = errorResolvers.find((item) => item.match);
+  if (matchedResolver) {
+    return matchedResolver.resolve();
   }
 
   console.error('Error interno capturado en backend:', error);

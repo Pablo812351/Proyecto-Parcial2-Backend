@@ -2,14 +2,14 @@ import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 import { isValidObjectId } from '../utils/errorHandler.js';
 
+const JWT_ERROR_NAMES = ['JsonWebTokenError', 'TokenExpiredError', 'NotBeforeError'];
+
 const protect = async (req, res, next) => {
   const authHeader = req.headers.authorization;
+  const token = typeof authHeader === 'string' && authHeader.startsWith('Bearer ')
+    ? authHeader.slice(7).trim()
+    : '';
 
-  if (!authHeader || typeof authHeader !== 'string' || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ message: 'No autorizado, falta token' });
-  }
-
-  const token = authHeader.slice(7).trim();
   if (!token) {
     return res.status(401).json({ message: 'No autorizado, falta token' });
   }
@@ -27,11 +27,7 @@ const protect = async (req, res, next) => {
 
     return next();
   } catch (error) {
-    if (
-      error.name === 'JsonWebTokenError' ||
-      error.name === 'TokenExpiredError' ||
-      error.name === 'NotBeforeError'
-    ) {
+    if (JWT_ERROR_NAMES.includes(error.name)) {
       return res.status(401).json({ message: 'No autorizado, token inválido o expirado' });
     }
     return next(error);
@@ -39,11 +35,10 @@ const protect = async (req, res, next) => {
 };
 
 const admin = (req, res, next) => {
-  if (req.user && req.user.role === 'ADMIN_ROLE') {
-    next();
-  } else {
+  if (req.user?.role !== 'ADMIN_ROLE') {
     return res.status(403).json({ message: 'No autorizado como administrador' });
   }
+  return next();
 };
 
 export { protect, admin };

@@ -24,23 +24,23 @@ export const validateRegisterInput = ({ username, email, password } = {}) => {
       msg: 'Todos los campos (usuario, email y contraseña) deben ser texto'
     },
     {
-      check: !username?.trim() || !email?.trim() || !password,
+      check: !isNonEmptyString(username) || !isNonEmptyString(email) || !password,
       msg: 'Todos los campos (usuario, email y contraseña) son obligatorios'
     },
     {
-      check: username?.trim().length < 3 || username?.trim().length > 30,
+      check: typeof username === 'string' && (username.trim().length < 3 || username.trim().length > 30),
       msg: 'El nombre de usuario debe tener entre 3 y 30 caracteres'
     },
     {
-      check: email?.trim().length > 254 || !EMAIL_REGEX.test(email?.trim().toLowerCase()),
+      check: typeof email === 'string' && (email.trim().length > 254 || !EMAIL_REGEX.test(email.trim().toLowerCase())),
       msg: 'Por favor ingrese un correo electrónico válido'
     },
     {
-      check: password?.length < 6,
+      check: typeof password === 'string' && password.length < 6,
       msg: 'La contraseña debe tener al menos 6 caracteres'
     },
     {
-      check: password?.length > 72,
+      check: typeof password === 'string' && password.length > 72,
       msg: 'La contraseña no puede superar los 72 caracteres'
     }
   ]);
@@ -53,11 +53,11 @@ export const validateLoginInput = ({ email, password } = {}) => {
       msg: 'El correo electrónico y la contraseña deben ser texto'
     },
     {
-      check: !email?.trim() || !password,
+      check: !isNonEmptyString(email) || !password,
       msg: 'Por favor ingrese correo electrónico y contraseña'
     },
     {
-      check: email?.trim().length > 254 || password?.length > 128,
+      check: typeof email === 'string' && typeof password === 'string' && (email.trim().length > 254 || password.length > 128),
       msg: 'Correo electrónico o contraseña inválidos',
       status: 401
     }
@@ -155,7 +155,7 @@ export const validateGamePayload = (body = {}, isUpdate = false) => {
       msg: isUpdate ? 'El título debe ser texto y no puede estar vacío' : 'El título del videojuego es obligatorio y debe ser texto'
     },
     {
-      check: shouldCheck(title) && title.trim().length > 150,
+      check: shouldCheck(title) && typeof title === 'string' && title.trim().length > 150,
       msg: 'El título del videojuego no puede superar los 150 caracteres'
     },
     {
@@ -163,7 +163,7 @@ export const validateGamePayload = (body = {}, isUpdate = false) => {
       msg: isUpdate ? 'La descripción debe ser texto y no puede estar vacía' : 'La descripción del videojuego es obligatoria y debe ser texto'
     },
     {
-      check: shouldCheck(description) && description.trim().length > 3000,
+      check: shouldCheck(description) && typeof description === 'string' && description.trim().length > 3000,
       msg: 'La descripción no puede superar los 3000 caracteres'
     },
     {
@@ -171,7 +171,7 @@ export const validateGamePayload = (body = {}, isUpdate = false) => {
       msg: isUpdate ? 'La desarrolladora debe ser texto y no puede estar vacía' : 'El nombre de la empresa/desarrolladora es obligatorio'
     },
     {
-      check: shouldCheck(developerName) && developerName.trim().length > 80,
+      check: shouldCheck(developerName) && typeof developerName === 'string' && developerName.trim().length > 80,
       msg: 'El nombre de la empresa no puede superar los 80 caracteres'
     },
     {
@@ -179,7 +179,7 @@ export const validateGamePayload = (body = {}, isUpdate = false) => {
       msg: isUpdate ? 'El género debe ser texto y no puede estar vacío' : 'El género del videojuego es obligatorio'
     },
     {
-      check: shouldCheck(genreName) && genreName.trim().length > 60,
+      check: shouldCheck(genreName) && typeof genreName === 'string' && genreName.trim().length > 60,
       msg: 'El nombre del género no puede superar los 60 caracteres'
     },
     {
